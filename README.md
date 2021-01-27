@@ -18,3 +18,7 @@ Replicates should have similar group ids.
 ## Fastagrep
 
 Using regular expression to find fasta records
+
+## hmm
+
+Simple HMM framework. Right now it is just a test framework
