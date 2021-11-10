@@ -30,7 +30,7 @@ func main() {
 		return
 	}
 
-	for i:= 1; i < len(os.Args) - 2; i++ {
+	for i:= 1; i < len(os.Args) - 1; i++ {
 		if os.Args[i] == "-p" {
 			percentage, err = strconv.ParseFloat(os.Args[i+1], 64)
 			if err != nil {
