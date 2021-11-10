@@ -19,6 +19,10 @@ Replicates should have similar group ids.
 
 Using regular expression to find fasta records
 
+## Fastasubsample
+
+Create a smaller subset of a fasta file
+
 ## hmm
 
 Simple HMM framework. Right now it is just a test framework
