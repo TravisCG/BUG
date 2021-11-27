@@ -26,3 +26,11 @@ Create a smaller subset of a fasta file
 ## hmm
 
 Simple HMM framework. Right now it is just a test framework
+
+## FastqFilt
+
+Filter fastq file by read id
+
+## RingRing
+
+Circular RNA finding tool
