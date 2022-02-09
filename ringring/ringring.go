@@ -5,11 +5,13 @@ import ("os"
 	"strconv"
 	"compress/gzip"
 	"bufio"
+	"strings"
 )
 
 type Edge struct {
 	nodes map[string]int64
 	innodes int64
+	visited bool
 }
 
 // Just print help messages
@@ -79,7 +81,7 @@ func readsToGraph(filename string, kmer int64) (map[string]Edge) {
 			if allNucs(line) {
 				for i = 0; i <= int64(len(line)) - kmer; i++ {
 					seq := line[i:i+kmer]
-					rcseq := revcomp(seq)
+					//rcseq := revcomp(seq)
 
 					_, exist := graph[seq[0:kmer-1]]
 					if !exist {
@@ -87,6 +89,7 @@ func readsToGraph(filename string, kmer int64) (map[string]Edge) {
 						actual.nodes = make(map[string]int64)
 						actual.nodes[seq[1:kmer]] = 0
 						actual.innodes = 0
+						actual.visited = false
 						graph[seq[0:kmer-1]] = actual
 					} else {
 						_, exist = graph[seq[0:kmer-1]].nodes[seq[1:kmer]]
@@ -96,19 +99,20 @@ func readsToGraph(filename string, kmer int64) (map[string]Edge) {
 					}
 					graph[seq[0:kmer-1]].nodes[seq[1:kmer]] += 1
 
-					_, exist = graph[rcseq[0:kmer-1]]
+					/*_, exist = graph[rcseq[0:kmer-1]]
 					if !exist {
 						var actual Edge
 						actual.nodes = make(map[string]int64)
 						actual.nodes[rcseq[1:kmer]] = 0
 						actual.innodes = 0
+						actual.visited = false
 						graph[rcseq[0:kmer-1]] = actual
 					} else {
 						if !exist {
 							graph[rcseq[0:kmer-1]].nodes[rcseq[1:kmer]] = 0
 						}
 					}
-					graph[rcseq[0:kmer-1]].nodes[rcseq[1:kmer]] += 1
+					graph[rcseq[0:kmer-1]].nodes[rcseq[1:kmer]] += 1*/
 				}
 			}
 		}
@@ -137,17 +141,93 @@ func calcInNodes(graph map[string]Edge) {
 	}
 }
 
-func walk(node string, graph map[string]Edge, startnode string, contig string) (bool){
+func isCyclic(node string, graph map[string]Edge, startnode string, depth int) (bool, string){
+	edge := graph[node]
+	edge.visited = true
+
+	if depth == 0 {
+		return false, ""
+	}
 
 	for k, _ := range graph[node].nodes {
-		if k == startnode {
-			return true
+		_,exist := graph[k]
+		if exist {
+			if k == startnode {
+				return true, k
+			}
+			edge = graph[k]
+			if edge.visited {
+				return false, ""
+			}
+			r, cyck := isCyclic(k, graph, startnode, depth - 1)
+			if r == true {
+				return true, k + cyck
+			}
 		}
-		contig += k[len(k)-1:]
-		walk(k, graph, startnode, contig)
 	}
-	fmt.Println(contig)
-	return false
+	return false, ""
+}
+
+func revertVisitedPath(node string, graph map[string]Edge, depth int) {
+	edge := graph[node]
+	edge.visited = false
+	if depth == 0 {
+		return
+	}
+
+	for k,_ := range graph[node].nodes {
+		_, exist := graph[k]
+		if exist {
+			edge = graph[k]
+			if edge.visited {
+				edge.visited = false
+				revertVisitedPath(k, graph, depth - 1)
+			}
+		}
+	}
+}
+
+func graphToSNF(graph map[string]Edge) {
+	for k, v := range graph {
+		for node, conn:= range v.nodes {
+			fmt.Println(k, conn, node)
+		}
+	}
+}
+
+func covHist(graph map[string]Edge) {
+	for k, v := range graph {
+		for _, conn := range v.nodes {
+			fmt.Println(k, conn)
+		}
+	}
+}
+
+func edgeFilter(graph map[string]Edge, minconn int64) {
+	for _, edge := range graph {
+		for target, conn := range edge.nodes {
+			if conn < minconn {
+				delete(edge.nodes, target)
+			}
+		}
+	}
+}
+
+func walk(kmerm1 string, graph map[string]Edge) (string){
+	contig := strings.Builder{}
+	contig.WriteString(kmerm1)
+	k := kmerm1
+	for true {
+		if len(graph[k].nodes) == 1 {
+			for k1,_ := range graph[k].nodes{
+				k = k1
+				contig.WriteString(string(k1[len(k1)-1]))
+			}
+		} else {
+			break
+		}
+	}
+	return contig.String()
 }
 
 func main() {
@@ -170,10 +250,25 @@ func main() {
 	}
 
 	graph := readsToGraph(ifilename, kmer)
+	edgeFilter(graph, 3)
 	calcInNodes(graph)
-	for k,_ := range graph {
-		//contig := k
-		fmt.Println(k, graph[k].innodes, len(graph[k].nodes))
-		//walk(k, graph, k, contig)
+	for kmerm1, node := range graph {
+		if node.innodes > 1 {
+			r, seq := isCyclic(kmerm1, graph, kmerm1, 4000)
+			if r {
+				fmt.Println(seq)
+			}
+			revertVisitedPath(kmerm1, graph, 4000)
+		}
 	}
+//	graphToSNF(graph)
+//	nodecount := 1
+//	for kmerm1, node := range graph {
+//		if node.innodes == 0 {
+//			fmt.Println(">node_",nodecount)
+//			contig := walk(kmerm1, graph)
+//			fmt.Println(contig)
+//			nodecount += 1
+//		}
+//	}
 }

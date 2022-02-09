@@ -21,7 +21,11 @@ Using regular expression to find fasta records
 
 ## Fastasubsample
 
-Create a smaller subset of a fasta file
+Create a smaller random subset of a fasta file
+
+## FastaSplit
+
+Split a multifasta into small, (roughly) equal proportions. Do not split sequences.
 
 ## hmm
 
