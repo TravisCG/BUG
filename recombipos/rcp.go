@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"strconv"
+	"math"
 )
 
 func printHelp() {
@@ -52,13 +53,32 @@ func getGT2(fields string) (string) {
 	return strings.Split(fields, ":")[0]
 }
 
-func processMatrix(m [][]int64, wsize int64) {
-	fmt.Println(wsize)
-	for i:= 0; i < len(m); i++ {
+func processMatrix(m [][]int64, positions []int64, wsize int, contig string) {
+	// Collect genotype changes
+	for i:= 1; i < len(m); i++ {
 		for j:= 0; j < 10; j++ {
-			fmt.Print(strconv.FormatInt(m[i][j], 10) + "\t")
+			r := int64(math.Abs(float64(m[i][j]) - float64(m[i-1][j])))
+			if r > 0 {
+				r = 1
+			}
+			m[i-1][j] = r
 		}
-		fmt.Println()
+	}
+
+	for i:= 0; i < len(m) - wsize; i++ {
+		var s int64 = 0
+		var tc int = 0
+		for j:=0; j < wsize; j++ {
+			for k:= 0; k < 10; k++ {
+				if m[i + j][k] == 1 {
+					tc = k
+				}
+				s += m[i + j][k]
+			}
+		}
+		if s == 1 {
+			fmt.Println(contig, positions[i], positions[i+wsize], tc)
+		}
 	}
 }
 
@@ -66,7 +86,7 @@ func main() {
 	var vcfname string = ""
 	var motherid string = ""
 	var fatherid string = ""
-	var windowsize int64 = 200
+	var windowsize int = 200
 
 	for i:= 0; i < len(os.Args); i++ {
 		if os.Args[i] == "-h" {
@@ -83,7 +103,7 @@ func main() {
 			fatherid = os.Args[i+1]
 		}
 		if os.Args[i] == "-w" {
-			windowsize, _ = strconv.ParseInt(os.Args[i+1], 10, 64)
+			windowsize,_ = strconv.Atoi(os.Args[i+1])
 		}
 	}
 
@@ -115,6 +135,7 @@ func main() {
 	var prevctg string = ""
 	var matrix [][]int64 // all windows per contig for every individual
 	var row []int64 // sum of het genotypes in a window per every individual
+	var poslist []int64
 
 	for vcf.Scan() {
 		line := vcf.Text()
@@ -135,28 +156,31 @@ func main() {
 			continue
 		}
 		ctg = cols[0]
-		//pos,err := strconv.ParseInt(cols[1], 10, 64)
-		//if err != nil {
-		//	fmt.Println("Invalid VCF file. Position is not integer:", cols[1])
-		//	return
-		//}
+		pos,err := strconv.ParseInt(cols[1], 10, 64)
+		if err != nil {
+			fmt.Println("Invalid VCF file. Position is not integer:", cols[1])
+			return
+		}
 		if ctg != prevctg {
 			if prevctg != "" {
 				// The contig is not the first one
-				processMatrix(matrix, windowsize)
+				processMatrix(matrix, poslist, windowsize, prevctg)
 			}
 			// new contig, new matrix
 			matrix = make([][]int64,0)
+			poslist = make([]int64, 0)
 		}
 		if getGT(cols[mothercol]) == 1 && getGT(cols[fathercol]) == 0 {
 			// if the mother is het and the father is hom then
 			// parse and store the offsprings genotype
+			row = make([]int64, len(cols) - 9)
 			for i:=9; i < len(cols); i++ {
 				row[i-9] = getGT(cols[i])
 			}
 			matrix = append(matrix, row)
+			poslist = append(poslist, pos)
 		}
 		prevctg = ctg
 	}
-	processMatrix(matrix, windowsize)
+	processMatrix(matrix, poslist, windowsize, prevctg)
 }
