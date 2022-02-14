@@ -7,7 +7,6 @@ import (
 	"os"
 	"strings"
 	"strconv"
-	"math"
 )
 
 func printHelp() {
@@ -48,22 +47,7 @@ func getGT(fields string) (int64) {
 	return 2
 }
 
-// This function is for debugging
-func getGT2(fields string) (string) {
-	return strings.Split(fields, ":")[0]
-}
-
 func processMatrix(m [][]int64, positions []int64, wsize int, contig string) {
-	// Collect genotype changes
-	for i:= 1; i < len(m); i++ {
-		for j:= 0; j < 10; j++ {
-			r := int64(math.Abs(float64(m[i][j]) - float64(m[i-1][j])))
-			if r > 0 {
-				r = 1
-			}
-			m[i-1][j] = r
-		}
-	}
 
 	for i:= 0; i < len(m) - wsize; i++ {
 		var s int64 = 0
@@ -170,7 +154,7 @@ func main() {
 			matrix = make([][]int64,0)
 			poslist = make([]int64, 0)
 		}
-		if getGT(cols[mothercol]) == 1 && getGT(cols[fathercol]) == 0 {
+		if (getGT(cols[mothercol]) == 1 && getGT(cols[fathercol]) == 0) || (getGT(cols[mothercol]) == 0 && getGT(cols[fathercol]) == 1) {
 			// if the mother is het and the father is hom then
 			// parse and store the offsprings genotype
 			row = make([]int64, len(cols) - 9)
