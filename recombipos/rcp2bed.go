@@ -37,6 +37,9 @@ func openvcf(filename string) (*bufio.Scanner) {
 // Parse the genotype 0: hom 1: het
 func getGT(fields string) (int64) {
 	gt := strings.Split(fields, ":")[0]
+	if len(gt) < 3 {
+		return 0
+	}
 	if gt[0] == gt[2] && (gt[0] == '0' || gt[0] == '.'){
 		return 0
 	}
