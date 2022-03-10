@@ -161,7 +161,7 @@ func isCyclic(node string, graph map[string]Edge, startnode string, depth int) (
 			}
 			r, cyck := isCyclic(k, graph, startnode, depth - 1)
 			if r == true {
-				return true, k + cyck
+				return true, k + cyck[19:20]
 			}
 		}
 	}
@@ -252,12 +252,11 @@ func main() {
 	graph := readsToGraph(ifilename, kmer)
 	edgeFilter(graph, 3)
 	calcInNodes(graph)
-	for kmerm1, node := range graph {
-		if node.innodes > 1 {
-			r, seq := isCyclic(kmerm1, graph, kmerm1, 4000)
-			if r {
-				fmt.Println(seq)
-			}
+	for kmerm1, _ := range graph {
+		r, seq := isCyclic(kmerm1, graph, kmerm1, 4000)
+		if r {
+			fmt.Println(seq)
+		} else {
 			revertVisitedPath(kmerm1, graph, 4000)
 		}
 	}
