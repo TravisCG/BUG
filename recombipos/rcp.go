@@ -53,92 +53,76 @@ func getGT(fields string) (int64) {
 	return 3
 }
 
-func viterbi(Y []float64, emp [][]float64, trp [][]float64) {
-	f
-}
+func processMatrix(m [][]int64, positions []int64, wsize int, contig string, mothercol int, fathercol int) {
 
-func processMatrix(m [][]int64, positions []int64, wsize int, contig string, mothercol int, fathercol int, targetcol int) {
-	var eclass int
-
-	emp := make([][]float64, 4)
-	emp[0] = make([]float64, 9)
-	emp[1] = make([]float64, 9)
-	emp[2] = make([]float64, 9)
-	emp[3] = make([]float64, 9)
-
-	emp[0][0] = 0.44
-	emp[0][1] = 0.22
-	emp[0][2] = 0.0
-	emp[0][3] = 0.22
-	emp[0][4] = 0.11
-	emp[0][5] = 0.0
-	emp[0][6] = 0.0
-	emp[0][7] = 0.0
-	emp[0][8] = 0.0
-
-	emp[1][0] = 0.0
-	emp[1][1] = 0.0
-	emp[1][2] = 0.0
-	emp[1][3] = 0.22
-	emp[1][4] = 0.11
-	emp[1][5] = 0.0
-	emp[1][6] = 0.44
-	emp[1][7] = 0.22
-	emp[1][8] = 0.0
-
-	emp[2][0] = 0.0
-	emp[2][1] = 0.22
-	emp[2][2] = 0.44
-	emp[2][3] = 0.0
-	emp[2][4] = 0.11
-	emp[2][5] = 0.22
-	emp[2][6] = 0.0
-	emp[2][7] = 0.0
-	emp[2][8] = 0.0
-
-	emp[3][0] = 0.0
-	emp[3][1] = 0.0
-	emp[3][2] = 0.0
-	emp[3][3] = 0.0
-	emp[3][4] = 0.11
-	emp[3][5] = 0.22
-	emp[3][6] = 0.0
-	emp[3][7] = 0.22
-	emp[3][8] = 0.44
-
-	trp := make([][]float64, 4)
-	trp[0] = make([]float64, 4)
-	trp[1] = make([]float64, 4)
-	trp[2] = make([]float64, 4)
-	trp[3] = make([]float64, 4)
-
-	trp[0][0] = 0.25
-	trp[0][1] = 0.25
-	trp[0][2] = 0.25
-	trp[0][3] = 0.25
-
-	trp[1][0] = 0.25
-	trp[1][1] = 0.25
-	trp[1][2] = 0.25
-	trp[1][3] = 0.25
-
-	trp[2][0] = 0.25
-	trp[2][1] = 0.25
-	trp[2][2] = 0.25
-	trp[2][3] = 0.25
-
-	trp[3][0] = 0.25
-	trp[3][1] = 0.25
-	trp[3][2] = 0.25
-	trp[3][3] = 0.25
-
-	for i:= 0; i < len(m) - wsize; i+=wsize {
-		Y := make([]float64, wsize)
-		for j:=0; j < wsize; j++ {
-			eclass = int(m[i+j][fathercol] * 3 + m[i+j][mothercol])
-			Y[j] = eclass
+	if len(m) < 1 {
+		return
+	}
+	// Creating changing matric
+	familynum := len(m[0])
+	change := make([][]int, len(m)-1, len(m)-1)
+	for i:=1; i < len(m); i++ {
+		change[i-1] = make([]int, familynum-2, familynum-2)
+		//fmt.Print(contig, " ",positions[i])
+		sybnum := 0
+		for j:=0; j < familynum; j++ {
+			if j == mothercol || j == fathercol {
+				continue
+			}
+			if m[i][j] == m[i-1][j] {
+				change[i-1][sybnum] = 0
+			} else {
+				change[i-1][sybnum] = 1
+			}
+			//fmt.Print(" ",change[i-1][sybnum])
+			sybnum++
 		}
-		viterbi(Y, trp, emp)
+		//fmt.Println()
+	}
+
+	// Identifying recombination
+	for i:=0; i < len(change); i++ {
+		pos := positions[i+1] // real position
+		zerocount := 0
+		onecount  := 0
+		for j:=0; j < familynum-2; j++ {
+			if change[i][j] == 0{
+				zerocount++
+			} else {
+				onecount++
+			}
+		}
+		if zerocount == 1 || onecount == 1 {
+			var target int = 1
+			var targetsyb int
+			if zerocount == 1 {
+				target = 0
+			}
+			for j:=0; j < familynum-2; j++ {
+				if change[i][j] == target {
+					targetsyb = j
+					break
+				}
+			}
+			fmt.Println("Recombination or mutation", contig, pos, targetsyb)
+			recombi  := true
+			var distance int64 = 0
+			toward   := i
+			for {
+				if toward == len(change)-1 || distance > 300 {
+					break
+				}
+				if change[toward][targetsyb] == 1{
+					recombi = false
+					break
+				}
+				toward++
+				distance = positions[toward+1] - pos
+			}
+			if recombi == true {
+				fmt.Println("Recombination", contig, pos, targetsyb)
+			}
+		}
 	}
 }
 
@@ -147,7 +131,6 @@ func main() {
 	var motherid string = ""
 	var fatherid string = ""
 	var windowsize int = 16
-	var targetid string = ""
 
 	for i:= 0; i < len(os.Args); i++ {
 		if os.Args[i] == "-h" {
@@ -166,9 +149,6 @@ func main() {
 		if os.Args[i] == "-w" {
 			windowsize,_ = strconv.Atoi(os.Args[i+1])
 		}
-		if os.Args[i] == "-t" {
-			targetid = os.Args[i+1]
-		}
 	}
 
 	var err bool = false
@@ -184,10 +164,6 @@ func main() {
 		fmt.Println("VCF file not specified")
 		err = true
 	}
-	if targetid == "" {
-		fmt.Println("Target sybling not specified")
-		err = true
-	}
 	if err {
 		return
 	}
@@ -199,7 +175,6 @@ func main() {
 
 	var fathercol int
 	var mothercol int
-	var targetcol int
 	var ctg string
 	var prevctg string = ""
 	var matrix [][]int64 // all windows per contig for every individual
@@ -220,9 +195,6 @@ func main() {
 				if cols[i] == fatherid {
 					fathercol = i
 				}
-				if cols[i] == targetid {
-					targetcol = i
-				}
 			}
 			row = make([]int64, len(cols) - 9)
 			continue
@@ -240,7 +212,7 @@ func main() {
 		if ctg != prevctg {
 			if prevctg != "" {
 				// The contig is not the first one
-				processMatrix(matrix, poslist, windowsize, prevctg, mothercol - 9, fathercol - 9, targetcol - 9)
+				processMatrix(matrix, poslist, windowsize, prevctg, mothercol - 9, fathercol - 9)
 			}
 			// new contig, new matrix
 			matrix = make([][]int64,0)
@@ -258,5 +230,5 @@ func main() {
 		}
 		prevctg = ctg
 	}
-	processMatrix(matrix, poslist, windowsize, prevctg, mothercol - 9, fathercol - 9, targetcol - 9)
+	processMatrix(matrix, poslist, windowsize, prevctg, mothercol - 9, fathercol - 9)
 }
