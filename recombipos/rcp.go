@@ -104,7 +104,7 @@ func processMatrix(m [][]int64, positions []int64, wsize int, contig string, mot
 					break
 				}
 			}
-			fmt.Println("Recombination or mutation", contig, pos, targetsyb)
+			fmt.Printf("%s\t%d\t%d\trecombi_or_mut_at_%d\t0\t+\t%d\t%d\t100,100,100\n", contig, positions[i], pos, targetsyb, positions[i], pos)
 			recombi  := true
 			var distance int64 = 0
 			toward   := i
@@ -120,7 +120,7 @@ func processMatrix(m [][]int64, positions []int64, wsize int, contig string, mot
 				distance = positions[toward+1] - pos
 			}
 			if recombi == true {
-				fmt.Println("Recombination", contig, pos, targetsyb)
+				fmt.Printf("%s\t%d\t%d\trecombi_or_mut_at_%d\t0\t+\t%d\t%d\t100,100,100\n", contig, positions[i], pos, targetsyb, positions[i], pos)
 			}
 		}
 	}
