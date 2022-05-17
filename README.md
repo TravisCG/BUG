@@ -38,3 +38,15 @@ Filter fastq file by read id
 ## RingRing
 
 Circular RNA finding tool
+
+## AnnoGraph
+
+Scaffolding using a GFF annotation
+
+## SimVCF
+
+Create simulated VCF file with two parents and siblings and simulate recombination events
+
+## SimCirc
+
+Create simulated reads came from circular RNA sample
