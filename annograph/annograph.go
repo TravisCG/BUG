@@ -92,6 +92,7 @@ func ParseGFF3(filename string) (map[string][]Region){
 func main() {
 	var genomename string = ""
 	var annoname   string = ""
+	var flanking   int64  = 500
 
 	for i:=0; i < len(os.Args); i++ {
 		if os.Args[i] == "-f" {
@@ -130,7 +131,7 @@ func main() {
 			}
 			dfrom := fromlen - from.end
 			dto   := tolen - to.end
-			if (dfrom < 500 && to.start < 500) || (dto < 500 && from.start < 500) {
+			if ((dfrom < flanking && to.start < flanking) || (dto < flanking && from.start < flanking)) && (from.strand == to.strand) {
 				fmt.Println(from.contig, fromlen, from.start, from.end, gene, to.contig, tolen, to.start, to.end)
 			}
 		}
