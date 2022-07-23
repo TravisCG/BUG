@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"strconv"
+	"regexp"
 )
 
 func printHelp() {
@@ -36,7 +37,7 @@ func openvcf(filename string) (*bufio.Scanner) {
 }
 
 // Parse the genotype 0: hom ref, 1: het, 2: hom alt, 3: hard to find out what it is
-func getGT(fields string) (int64) {
+func getGT(fields string) (int) {
 	gt := strings.Split(fields, ":")[0]
 	if len(gt) == 1 {
 		return 3
@@ -53,77 +54,63 @@ func getGT(fields string) (int64) {
 	return 3
 }
 
-func processMatrix(m [][]int64, positions []int64, wsize int, contig string, mothercol int, fathercol int) {
+func compareClasses(prev []int, actual []int) bool {
+	var same int = 0
+	var comparable int = 0
+	for i:=0; i < len(prev); i++ {
+		if prev[i] != -1 && actual[i] != -1 {
+			comparable++
+		}
+		if prev[i] == actual[i] && prev[i] != -1{
+			same++
+		}
+	}
+	if same > 0 && same < comparable {
+		//fmt.Println("Recombination!", prev, actual, same, comparable)
+		return true
+	}
+	return false
+}
+
+func clustering(m []int, hetcol int, homcol int) []int {
+	classes := make([]int, len(m))
+	for j:=0; j < len(m); j++ {
+		if j == hetcol || j == homcol {
+			classes[j] = -1 // -1 means do not compare the clusters
+		} else {
+			classes[j] = m[j] - (m[homcol] / 2)
+		}
+		if classes[j] == 2 {
+			classes[j] = -1 // it is impossible to be a hom alt sibling when the hom parent is ref. It is a sequencing error, set it -1 (no compare)
+		}
+	}
+	return classes
+
+}
+
+func processMatrix(m [][]int, positions []int, wsize int, contig string, hetcol int, homcol int) {
 
 	if len(m) < 1 {
 		return
 	}
-	// Creating changing matric
-	familynum := len(m[0])
-	change := make([][]int, len(m)-1, len(m)-1)
-	for i:=1; i < len(m); i++ {
-		change[i-1] = make([]int, familynum-2, familynum-2)
-		//fmt.Print(contig, " ",positions[i])
-		sybnum := 0
-		for j:=0; j < familynum; j++ {
-			if j == mothercol || j == fathercol {
-				continue
+	classes := make([]int, len(m[0]))
+	prevclasses := make([]int, len(m[0]))
+	for i:=0; i < len(m); i++ {
+		if m[i][hetcol] == 1 && (m[i][homcol] == 0 || m[i][homcol] == 2) {
+			classes = clustering(m[i], hetcol, homcol)
+			if i > 0 {
+				if compareClasses(prevclasses, classes) {
+					fmt.Println(contig, positions[i])
+				}
 			}
-			if m[i][j] == m[i-1][j] {
-				change[i-1][sybnum] = 0
-			} else {
-				change[i-1][sybnum] = 1
-			}
-			//fmt.Print(" ",change[i-1][sybnum])
-			sybnum++
+			prevclasses = classes
 		}
-		//fmt.Println()
 	}
+}
 
-	// Identifying recombination
-	for i:=0; i < len(change); i++ {
-		pos := positions[i+1] // real position
-		zerocount := 0
-		onecount  := 0
-		for j:=0; j < familynum-2; j++ {
-			if change[i][j] == 0{
-				zerocount++
-			} else {
-				onecount++
-			}
-		}
-		if zerocount == 1 || onecount == 1 {
-			var target int = 1
-			var targetsyb int
-			if zerocount == 1 {
-				target = 0
-			}
-			for j:=0; j < familynum-2; j++ {
-				if change[i][j] == target {
-					targetsyb = j
-					break
-				}
-			}
-			fmt.Printf("%s\t%d\t%d\trecombi_or_mut_at_%d\t0\t+\t%d\t%d\t100,100,100\n", contig, positions[i], pos, targetsyb, positions[i], pos)
-			recombi  := true
-			var distance int64 = 0
-			toward   := i
-			for {
-				if toward == len(change)-1 || distance > 300 {
-					break
-				}
-				if change[toward][targetsyb] == 1{
-					recombi = false
-					break
-				}
-				toward++
-				distance = positions[toward+1] - pos
-			}
-			if recombi == true {
-				fmt.Printf("%s\t%d\t%d\trecombi_or_mut_at_%d\t0\t+\t%d\t%d\t100,100,100\n", contig, positions[i], pos, targetsyb, positions[i], pos)
-			}
-		}
-	}
+func processContig(m [][]int, positions []int, wsize int, contig string, mother int, father int) {
+	processMatrix(m, positions, wsize, contig, mother, father)
+	processMatrix(m, positions, wsize, contig, father, mother)
 }
 
 func main() {
@@ -177,13 +164,24 @@ func main() {
 	var mothercol int
 	var ctg string
 	var prevctg string = ""
-	var matrix [][]int64 // all windows per contig for every individual
-	var row []int64 // sum of het genotypes in a window per every individual
-	var poslist []int64
+	var matrix [][]int // all windows per contig for every individual
+	var row []int // sum of het genotypes in a window per every individual
+	var poslist []int
+	var contiglen map[string]int = make(map[string]int)
 
+	re,rerr := regexp.Compile("##contig=<ID=([^,]+),length=([0-9]+)>")
+	if rerr != nil {
+		fmt.Println("Cannot compile regexp")
+		return
+	}
 	for vcf.Scan() {
 		line := vcf.Text()
 		if line[1] == '#' {
+			if line[0:8] == "##contig" {
+				match := re.FindAllStringSubmatch(line, -1)
+				//contiglen[match[0][1]],_ = strconv.ParseInt(match[0][2],10,64)
+				contiglen[match[0][1]],_ = strconv.Atoi(match[0][2])
+			}
 			continue
 		}
 		cols := strings.Split(line, "\t")
@@ -196,11 +194,11 @@ func main() {
 					fathercol = i
 				}
 			}
-			row = make([]int64, len(cols) - 9)
+			row = make([]int, len(cols) - 9)
 			continue
 		}
 		ctg = cols[0]
-		pos,err := strconv.ParseInt(cols[1], 10, 64)
+		pos,err := strconv.Atoi(cols[1])
 		if err != nil {
 			fmt.Println("Invalid VCF file. Position is not integer:", cols[1])
 			return
@@ -212,16 +210,17 @@ func main() {
 		if ctg != prevctg {
 			if prevctg != "" {
 				// The contig is not the first one
-				processMatrix(matrix, poslist, windowsize, prevctg, mothercol - 9, fathercol - 9)
+				processContig(matrix, poslist, windowsize, prevctg, mothercol - 9, fathercol - 9)
 			}
 			// new contig, new matrix
-			matrix = make([][]int64,0)
-			poslist = make([]int64, 0)
+			matrix = make([][]int,0)
+			poslist = make([]int, 0)
 		}
-		if (getGT(cols[mothercol]) == 1 && getGT(cols[fathercol]) == 0) {//|| (getGT(cols[mothercol]) == 0 && getGT(cols[fathercol]) == 1) {
+		if getGT(cols[mothercol]) != 3 && getGT(cols[fathercol]) != 3 {
+		//if (getGT(cols[mothercol]) == 1 && getGT(cols[fathercol]) == 0) {//|| (getGT(cols[mothercol]) == 0 && getGT(cols[fathercol]) == 1) {
 			// if the mother is het and the father is hom then
 			// parse and store the offsprings genotype
-			row = make([]int64, len(cols) - 9)
+			row = make([]int, len(cols) - 9)
 			for i:=9; i < len(cols); i++ {
 				row[i-9] = getGT(cols[i])
 			}
@@ -230,5 +229,5 @@ func main() {
 		}
 		prevctg = ctg
 	}
-	processMatrix(matrix, poslist, windowsize, prevctg, mothercol - 9, fathercol - 9)
+	processContig(matrix, poslist, windowsize, prevctg, mothercol - 9, fathercol - 9)
 }

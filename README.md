@@ -50,3 +50,7 @@ Create simulated VCF file with two parents and siblings and simulate recombinati
 ## SimCirc
 
 Create simulated reads came from circular RNA sample
+
+## MisAs
+
+Find misassemblies using soft and hard clipped long reads
