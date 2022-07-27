@@ -8,7 +8,13 @@ import (
 	"strings"
 	"strconv"
 	"regexp"
+	"math"
 )
+
+type Recombi struct {
+	position int
+	siblings []int
+}
 
 func printHelp() {
 	fmt.Println("recombination position finder")
@@ -54,22 +60,27 @@ func getGT(fields string) (int) {
 	return 3
 }
 
-func compareClasses(prev []int, actual []int) bool {
+func compareClasses(prev []int, actual []int) []int {
 	var same int = 0
 	var comparable int = 0
+	var recombi []int
+	recombi = make([]int, 0)
 	for i:=0; i < len(prev); i++ {
-		if prev[i] != -1 && actual[i] != -1 {
-			comparable++
+		if prev[i] == -1 || actual[i] == -1 {
+			continue
 		}
-		if prev[i] == actual[i] && prev[i] != -1{
+		comparable++
+		if prev[i] == actual[i]{
 			same++
+		}
+		if prev[i] != actual[i]{
+			recombi = append(recombi, i)
 		}
 	}
 	if same > 0 && same < comparable {
-		//fmt.Println("Recombination!", prev, actual, same, comparable)
-		return true
+		return recombi
 	}
-	return false
+	return nil
 }
 
 func clustering(m []int, hetcol int, homcol int) []int {
@@ -85,32 +96,96 @@ func clustering(m []int, hetcol int, homcol int) []int {
 		}
 	}
 	return classes
-
 }
 
-func processMatrix(m [][]int, positions []int, wsize int, contig string, hetcol int, homcol int) {
+func normclasses(classes []int, prev []int) []int {
+	diff := 0
+	anticlass := make([]int, len(classes))
+	for j:=0; j < len(classes); j++ {
+		if classes[j] != prev[j] {
+			diff++
+		}
+		anticlass[j] = -1
+		if classes[j] != -1 {
+			anticlass[j] = int(math.Abs(float64(classes[j] - 1)))
+		}
+	}
+	if diff > len(classes) / 2 {
+		return anticlass
+	}
+	return classes
+}
+
+func processMatrix(m [][]int, positions []int, wsize int, hetcol int, homcol int) ([]Recombi,[]int) {
+
+	var ret []Recombi
 
 	if len(m) < 1 {
-		return
+		return ret,nil
 	}
 	classes := make([]int, len(m[0]))
 	prevclasses := make([]int, len(m[0]))
+	firstclasses := make([]int, len(m[0]))
+	ret = make([]Recombi, 0)
 	for i:=0; i < len(m); i++ {
 		if m[i][hetcol] == 1 && (m[i][homcol] == 0 || m[i][homcol] == 2) {
 			classes = clustering(m[i], hetcol, homcol)
 			if i > 0 {
-				if compareClasses(prevclasses, classes) {
-					fmt.Println(contig, positions[i])
+				classes = normclasses(classes, prevclasses)
+				r := compareClasses(prevclasses, classes)
+				if r != nil {
+					var actual Recombi
+					actual.position = positions[i]
+					actual.siblings = r
+					ret = append(ret, actual)
 				}
+			}else{
+				firstclasses = classes
 			}
 			prevclasses = classes
 		}
 	}
+	return ret,firstclasses
 }
 
-func processContig(m [][]int, positions []int, wsize int, contig string, mother int, father int) {
-	processMatrix(m, positions, wsize, contig, mother, father)
-	processMatrix(m, positions, wsize, contig, father, mother)
+func writeBED(rp []Recombi, firstclasses []int, contig string, contiglen int, sibnames []string, parent int){
+	var prevpos []int
+	var out []*os.File
+	colors := []string{"255,0,0", "0,255,0"}
+	prevpos = make([]int, len(sibnames))
+	out = make([]*os.File, len(sibnames))
+
+	for i:=0; i < len(sibnames); i++ {
+		if firstclasses[i] != -1 {
+			prevpos[i] = 0
+			out[i],_ = os.OpenFile(sibnames[i] + "." + sibnames[parent] + ".bed", os.O_CREATE | os.O_WRONLY, 0755)
+		}
+	}
+
+	for i:=0; i < len(rp); i++ {
+		for s:=0; s < len(rp[i].siblings); s++ {
+			sib := rp[i].siblings[s]
+			out[sib].WriteString(contig + "\t" + strconv.Itoa(prevpos[sib]) + "\t" + strconv.Itoa(rp[i].position - 1) + "\t0\t0\t+\t" + strconv.Itoa(prevpos[sib]) + "\t" + strconv.Itoa(rp[i].position - 1) + "\t" + colors[firstclasses[sib]] + "\n")
+			prevpos[sib] = rp[i].position
+			firstclasses[sib] = int(math.Abs(float64(firstclasses[sib] - 1)))
+		}
+	}
+
+	for i:=0; i < len(sibnames); i++ {
+		if firstclasses[i] != -1 {
+			out[i].WriteString(contig + "\t" + strconv.Itoa(prevpos[i]) + "\t" + strconv.Itoa(contiglen-1) + "\t0\t0\t+\t" + strconv.Itoa(prevpos[i]) + "\t" + strconv.Itoa(contiglen-1) + "\t" + colors[firstclasses[i]] + "\n")
+			out[i].Close()
+		}
+	}
+}
+
+func processContig(m [][]int, positions []int, wsize int, contig string, contiglen int, mother int, father int, sibnames []string) {
+	var recpos []Recombi
+	var firstclasses []int
+	recpos,firstclasses = processMatrix(m, positions, wsize, mother, father)
+	writeBED(recpos, firstclasses, contig, contiglen, sibnames, mother)
+	recpos,firstclasses = processMatrix(m, positions, wsize, father, mother)
+	writeBED(recpos, firstclasses, contig, contiglen, sibnames, father)
 }
 
 func main() {
@@ -168,6 +243,7 @@ func main() {
 	var row []int // sum of het genotypes in a window per every individual
 	var poslist []int
 	var contiglen map[string]int = make(map[string]int)
+	var sibnames []string = make([]string, 0)
 
 	re,rerr := regexp.Compile("##contig=<ID=([^,]+),length=([0-9]+)>")
 	if rerr != nil {
@@ -179,7 +255,6 @@ func main() {
 		if line[1] == '#' {
 			if line[0:8] == "##contig" {
 				match := re.FindAllStringSubmatch(line, -1)
-				//contiglen[match[0][1]],_ = strconv.ParseInt(match[0][2],10,64)
 				contiglen[match[0][1]],_ = strconv.Atoi(match[0][2])
 			}
 			continue
@@ -192,6 +267,9 @@ func main() {
 				}
 				if cols[i] == fatherid {
 					fathercol = i
+				}
+				if i > 8 {
+					sibnames = append(sibnames, cols[i])
 				}
 			}
 			row = make([]int, len(cols) - 9)
@@ -210,15 +288,13 @@ func main() {
 		if ctg != prevctg {
 			if prevctg != "" {
 				// The contig is not the first one
-				processContig(matrix, poslist, windowsize, prevctg, mothercol - 9, fathercol - 9)
+				processContig(matrix, poslist, windowsize, prevctg, contiglen[prevctg], mothercol - 9, fathercol - 9, sibnames)
 			}
 			// new contig, new matrix
 			matrix = make([][]int,0)
 			poslist = make([]int, 0)
 		}
 		if getGT(cols[mothercol]) != 3 && getGT(cols[fathercol]) != 3 {
-		//if (getGT(cols[mothercol]) == 1 && getGT(cols[fathercol]) == 0) {//|| (getGT(cols[mothercol]) == 0 && getGT(cols[fathercol]) == 1) {
-			// if the mother is het and the father is hom then
 			// parse and store the offsprings genotype
 			row = make([]int, len(cols) - 9)
 			for i:=9; i < len(cols); i++ {
@@ -229,5 +305,5 @@ func main() {
 		}
 		prevctg = ctg
 	}
-	processContig(matrix, poslist, windowsize, prevctg, mothercol - 9, fathercol - 9)
+	processContig(matrix, poslist, windowsize, prevctg, contiglen[prevctg], mothercol - 9, fathercol - 9, sibnames)
 }
