@@ -158,13 +158,16 @@ func writeBED(rp []Recombi, firstclasses []int, contig string, contiglen int, si
 	for i:=0; i < len(sibnames); i++ {
 		if firstclasses[i] != -1 {
 			prevpos[i] = 0
-			out[i],_ = os.OpenFile(sibnames[i] + "." + sibnames[parent] + ".bed", os.O_CREATE | os.O_WRONLY, 0755)
+			out[i],_ = os.OpenFile(sibnames[i] + "." + sibnames[parent] + ".bed", os.O_CREATE | os.O_APPEND | os.O_WRONLY, 0755)
 		}
 	}
 
 	for i:=0; i < len(rp); i++ {
 		for s:=0; s < len(rp[i].siblings); s++ {
 			sib := rp[i].siblings[s]
+			if firstclasses[sib] != 0 && firstclasses[sib] != 1 {
+				firstclasses[sib] = 0 //FIXME dirty hack. The firstclass contains a sequencing error. We hide it, but it will cause a recombination in the beginning of the contig
+			}
 			out[sib].WriteString(contig + "\t" + strconv.Itoa(prevpos[sib]) + "\t" + strconv.Itoa(rp[i].position - 1) + "\t0\t0\t+\t" + strconv.Itoa(prevpos[sib]) + "\t" + strconv.Itoa(rp[i].position - 1) + "\t" + colors[firstclasses[sib]] + "\n")
 			prevpos[sib] = rp[i].position
 			firstclasses[sib] = int(math.Abs(float64(firstclasses[sib] - 1)))
