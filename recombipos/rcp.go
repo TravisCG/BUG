@@ -148,7 +148,7 @@ func processMatrix(m [][]int, positions []int, wsize int, hetcol int, homcol int
 	return ret,firstclasses
 }
 
-func writeBED(rp []Recombi, firstclasses []int, contig string, contiglen int, sibnames []string, parent int){
+func writeBED(rp []Recombi, firstclasses []int, contig string, contiglen int, sibnames []string, parent int, otherparent int){
 	var prevpos []int
 	var out []*os.File
 	colors := []string{"255,0,0", "0,255,0"}
@@ -156,7 +156,7 @@ func writeBED(rp []Recombi, firstclasses []int, contig string, contiglen int, si
 	out = make([]*os.File, len(sibnames))
 
 	for i:=0; i < len(sibnames); i++ {
-		if firstclasses[i] != -1 {
+		if firstclasses[i] != -1 && i != otherparent && i != parent{
 			prevpos[i] = 0
 			out[i],_ = os.OpenFile(sibnames[i] + "." + sibnames[parent] + ".bed", os.O_CREATE | os.O_APPEND | os.O_WRONLY, 0755)
 		}
@@ -165,6 +165,9 @@ func writeBED(rp []Recombi, firstclasses []int, contig string, contiglen int, si
 	for i:=0; i < len(rp); i++ {
 		for s:=0; s < len(rp[i].siblings); s++ {
 			sib := rp[i].siblings[s]
+			if sib == otherparent || sib == parent {
+				continue
+			}
 			if firstclasses[sib] != 0 && firstclasses[sib] != 1 {
 				firstclasses[sib] = 0 //FIXME dirty hack. The firstclass contains a sequencing error. We hide it, but it will cause a recombination in the beginning of the contig
 			}
@@ -175,6 +178,9 @@ func writeBED(rp []Recombi, firstclasses []int, contig string, contiglen int, si
 	}
 
 	for i:=0; i < len(sibnames); i++ {
+		if i == otherparent || i == parent {
+			continue
+		}
 		if firstclasses[i] != -1 {
 			out[i].WriteString(contig + "\t" + strconv.Itoa(prevpos[i]) + "\t" + strconv.Itoa(contiglen-1) + "\t0\t0\t+\t" + strconv.Itoa(prevpos[i]) + "\t" + strconv.Itoa(contiglen-1) + "\t" + colors[firstclasses[i]] + "\n")
 			out[i].Close()
@@ -186,9 +192,9 @@ func processContig(m [][]int, positions []int, wsize int, contig string, contigl
 	var recpos []Recombi
 	var firstclasses []int
 	recpos,firstclasses = processMatrix(m, positions, wsize, mother, father)
-	writeBED(recpos, firstclasses, contig, contiglen, sibnames, mother)
+	writeBED(recpos, firstclasses, contig, contiglen, sibnames, mother, father)
 	recpos,firstclasses = processMatrix(m, positions, wsize, father, mother)
-	writeBED(recpos, firstclasses, contig, contiglen, sibnames, father)
+	writeBED(recpos, firstclasses, contig, contiglen, sibnames, father, mother)
 }
 
 func main() {
