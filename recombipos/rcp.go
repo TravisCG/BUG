@@ -60,13 +60,13 @@ func getGT(fields string) (int) {
 	return 3
 }
 
-func compareClasses(prev []int, actual []int) []int {
+func compareClasses(prev string, actual string) []int {
 	var same int = 0
 	var comparable int = 0
 	var recombi []int
 	recombi = make([]int, 0)
 	for i:=0; i < len(prev); i++ {
-		if prev[i] == -1 || actual[i] == -1 {
+		if prev[i] == 'x' || actual[i] == 'x' {
 			continue
 		}
 		comparable++
@@ -83,82 +83,127 @@ func compareClasses(prev []int, actual []int) []int {
 	return nil
 }
 
-func clustering(m []int, hetcol int, homcol int) []int {
-	classes := make([]int, len(m))
+func clustering(m []int, hetcol int, homcol int) string {
+	classes := strings.Builder{}
 	for j:=0; j < len(m); j++ {
 		if j == hetcol || j == homcol {
-			classes[j] = -1 // -1 means do not compare the clusters
+			classes.WriteString("x")
 		} else {
-			classes[j] = m[j] - (m[homcol] / 2)
-		}
-		if classes[j] == 2 {
-			classes[j] = -1 // it is impossible to be a hom alt sibling when the hom parent is ref. It is a sequencing error, set it -1 (no compare)
+			clnum := m[j] - (m[homcol] / 2)
+			if clnum == -1 {
+				classes.WriteString("x")
+			} else {
+				classes.WriteString(strconv.Itoa(clnum))
+			}
 		}
 	}
-	return classes
+	return classes.String()
 }
 
-func normclasses(classes []int, prev []int) []int {
+func normclasses(classes string, prev string) string {
 	diff := 0
-	anticlass := make([]int, len(classes))
+	anticlass := strings.Builder{}
 	for j:=0; j < len(classes); j++ {
 		if classes[j] != prev[j] {
 			diff++
 		}
-		anticlass[j] = -1
-		if classes[j] != -1 {
-			anticlass[j] = int(math.Abs(float64(classes[j] - 1)))
+		if classes[j] != 'x' {
+			num,_ := strconv.Atoi(string(classes[j]))
+			i := int(math.Abs(float64(num - 1)))
+			anticlass.WriteString(strconv.Itoa(i))
+		} else {
+			anticlass.WriteString("x")
 		}
 	}
 	if diff > len(classes) / 2 {
-		return anticlass
+		return anticlass.String()
 	}
 	return classes
 }
 
-func processMatrix(m [][]int, positions []int, wsize int, hetcol int, homcol int) ([]Recombi,[]int) {
-
-	var ret []Recombi
-
-	if len(m) < 1 {
-		return ret,nil
-	}
-	classes := make([]int, len(m[0]))
-	prevclasses := make([]int, len(m[0]))
-	firstclasses := make([]int, len(m[0]))
-	ret = make([]Recombi, 0)
-	for i:=0; i < len(m); i++ {
-		if m[i][hetcol] == 1 && (m[i][homcol] == 0 || m[i][homcol] == 2) {
-			classes = clustering(m[i], hetcol, homcol)
-			if i > 0 {
-				classes = normclasses(classes, prevclasses)
-				r := compareClasses(prevclasses, classes)
-				if r != nil {
-					var actual Recombi
-					actual.position = positions[i]
-					actual.siblings = r
-					ret = append(ret, actual)
-				}
-			}else{
-				firstclasses = classes
+func getPosition(m [][]int, positions []int, startpos int, wsize int, prevclasses string, classes string, hetcol int, homcol int) int {
+	var i int
+	for i=0; i < wsize; i++ {
+		if m[startpos + i][hetcol] == 1 && (m[startpos+i][homcol] == 0 || m[startpos + i][homcol] == 2){
+			actclass := clustering(m[startpos + i], hetcol, homcol)
+			if actclass == classes {
+				break
 			}
-			prevclasses = classes
 		}
 	}
-	return ret,firstclasses
+	return positions[startpos + i]
 }
 
-func writeBED(rp []Recombi, firstclasses []int, contig string, contiglen int, sibnames []string, parent int, otherparent int){
+func processMatrix(m [][]int, positions []int, wsize int, hetcol int, homcol int) ([]Recombi, string){
+	var ret []Recombi
+	var classes string
+	var prevclasses string
+	var firstclasses string
+	var first bool = true
+
+	if len(m) == 0 {
+		return ret, ""
+	}
+
+	ret = make([]Recombi, 0)
+
+	for i:=0; i < len(m) - wsize; i++ {
+		// go through the window
+		classabu := make(map[string]int)
+		for j:=0; j < wsize; j++ {
+			if m[i+j][hetcol] == 1 && (m[i+j][homcol] == 0 || m[i+j][homcol] == 2){
+				classes = clustering(m[i+j], hetcol, homcol)
+				_,exists := classabu[classes]
+				if !exists {
+					classabu[classes] = 0
+				}
+				classabu[classes] += 1
+			}
+		}
+		// get most abundant class
+		max := 0
+		maxclass := ""
+		for k,v := range classabu {
+			if v > max {
+				maxclass = k
+			}
+		}
+		if maxclass == "" {
+			continue
+		}
+		if first {
+			firstclasses = classes
+			first = false
+		} else {
+			// clustering
+			classes = normclasses(classes, prevclasses)
+			r := compareClasses(prevclasses, classes)
+			// recombination
+			if r != nil {
+				var actual Recombi
+				actual.position = getPosition(m, positions, i, wsize, prevclasses, classes, hetcol, homcol)
+				actual.siblings = r
+				ret = append(ret, actual)
+			}
+		}
+		prevclasses = classes
+	}
+	return ret, firstclasses
+}
+
+func writeBED(rp []Recombi, firstclasses string, contig string, contiglen int, sibnames []string, parent int, otherparent int){
 	var prevpos []int
 	var out []*os.File
 	colors := []string{"255,0,0", "0,255,0"}
 	prevpos = make([]int, len(sibnames))
+	flipflop := make([]int, len(sibnames))
 	out = make([]*os.File, len(sibnames))
 
 	for i:=0; i < len(sibnames); i++ {
-		if firstclasses[i] != -1 && i != otherparent && i != parent{
+		if firstclasses[i] != 'x' && i != otherparent && i != parent{
 			prevpos[i] = 0
 			out[i],_ = os.OpenFile(sibnames[i] + "." + sibnames[parent] + ".bed", os.O_CREATE | os.O_APPEND | os.O_WRONLY, 0755)
+			flipflop[i],_ = strconv.Atoi(string(firstclasses[i]))
 		}
 	}
 
@@ -168,12 +213,10 @@ func writeBED(rp []Recombi, firstclasses []int, contig string, contiglen int, si
 			if sib == otherparent || sib == parent {
 				continue
 			}
-			if firstclasses[sib] != 0 && firstclasses[sib] != 1 {
-				firstclasses[sib] = 0 //FIXME dirty hack. The firstclass contains a sequencing error. We hide it, but it will cause a recombination in the beginning of the contig
-			}
-			out[sib].WriteString(contig + "\t" + strconv.Itoa(prevpos[sib]) + "\t" + strconv.Itoa(rp[i].position - 1) + "\t0\t0\t+\t" + strconv.Itoa(prevpos[sib]) + "\t" + strconv.Itoa(rp[i].position - 1) + "\t" + colors[firstclasses[sib]] + "\n")
+
+			out[sib].WriteString(contig + "\t" + strconv.Itoa(prevpos[sib]) + "\t" + strconv.Itoa(rp[i].position - 1) + "\t0\t0\t+\t" + strconv.Itoa(prevpos[sib]) + "\t" + strconv.Itoa(rp[i].position - 1) + "\t" + colors[flipflop[sib]] + "\n")
 			prevpos[sib] = rp[i].position
-			firstclasses[sib] = int(math.Abs(float64(firstclasses[sib] - 1)))
+			flipflop[sib] = int(math.Abs(float64(flipflop[sib] - 1)))
 		}
 	}
 
@@ -181,8 +224,8 @@ func writeBED(rp []Recombi, firstclasses []int, contig string, contiglen int, si
 		if i == otherparent || i == parent {
 			continue
 		}
-		if firstclasses[i] != -1 {
-			out[i].WriteString(contig + "\t" + strconv.Itoa(prevpos[i]) + "\t" + strconv.Itoa(contiglen-1) + "\t0\t0\t+\t" + strconv.Itoa(prevpos[i]) + "\t" + strconv.Itoa(contiglen-1) + "\t" + colors[firstclasses[i]] + "\n")
+		if firstclasses[i] != 'x' {
+			out[i].WriteString(contig + "\t" + strconv.Itoa(prevpos[i]) + "\t" + strconv.Itoa(contiglen-1) + "\t0\t0\t+\t" + strconv.Itoa(prevpos[i]) + "\t" + strconv.Itoa(contiglen-1) + "\t" + colors[flipflop[i]] + "\n")
 			out[i].Close()
 		}
 	}
@@ -190,7 +233,7 @@ func writeBED(rp []Recombi, firstclasses []int, contig string, contiglen int, si
 
 func processContig(m [][]int, positions []int, wsize int, contig string, contiglen int, mother int, father int, sibnames []string) {
 	var recpos []Recombi
-	var firstclasses []int
+	var firstclasses string
 	recpos,firstclasses = processMatrix(m, positions, wsize, mother, father)
 	writeBED(recpos, firstclasses, contig, contiglen, sibnames, mother, father)
 	recpos,firstclasses = processMatrix(m, positions, wsize, father, mother)
