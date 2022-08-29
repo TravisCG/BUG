@@ -198,12 +198,19 @@ func writeBED(rp []Recombi, firstclasses string, contig string, contiglen int, s
 	prevpos = make([]int, len(sibnames))
 	flipflop := make([]int, len(sibnames))
 	out = make([]*os.File, len(sibnames))
+	// if there is no recombination at all, we do not put any output
+	if len(firstclasses) == 0 {
+		return
+	}
 
 	for i:=0; i < len(sibnames); i++ {
 		if firstclasses[i] != 'x' && i != otherparent && i != parent{
 			prevpos[i] = 0
 			out[i],_ = os.OpenFile(sibnames[i] + "." + sibnames[parent] + ".bed", os.O_CREATE | os.O_APPEND | os.O_WRONLY, 0755)
 			flipflop[i],_ = strconv.Atoi(string(firstclasses[i]))
+			if flipflop[i] > 1 {
+				flipflop[i] = 1
+			}
 		}
 	}
 
@@ -213,7 +220,6 @@ func writeBED(rp []Recombi, firstclasses string, contig string, contiglen int, s
 			if sib == otherparent || sib == parent {
 				continue
 			}
-
 			out[sib].WriteString(contig + "\t" + strconv.Itoa(prevpos[sib]) + "\t" + strconv.Itoa(rp[i].position - 1) + "\t0\t0\t+\t" + strconv.Itoa(prevpos[sib]) + "\t" + strconv.Itoa(rp[i].position - 1) + "\t" + colors[flipflop[sib]] + "\n")
 			prevpos[sib] = rp[i].position
 			flipflop[sib] = int(math.Abs(float64(flipflop[sib] - 1)))
@@ -225,7 +231,12 @@ func writeBED(rp []Recombi, firstclasses string, contig string, contiglen int, s
 			continue
 		}
 		if firstclasses[i] != 'x' {
-			out[i].WriteString(contig + "\t" + strconv.Itoa(prevpos[i]) + "\t" + strconv.Itoa(contiglen-1) + "\t0\t0\t+\t" + strconv.Itoa(prevpos[i]) + "\t" + strconv.Itoa(contiglen-1) + "\t" + colors[flipflop[i]] + "\n")
+			out[i].WriteString(contig + "\t")
+			out[i].WriteString(strconv.Itoa(prevpos[i]) + "\t")
+			out[i].WriteString(strconv.Itoa(contiglen-1) + "\t0\t0\t+\t")
+			out[i].WriteString(strconv.Itoa(prevpos[i]) + "\t")
+			out[i].WriteString(strconv.Itoa(contiglen-1) + "\t")
+			out[i].WriteString(colors[flipflop[i]] + "\n")
 			out[i].Close()
 		}
 	}
