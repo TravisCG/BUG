@@ -221,9 +221,6 @@ func processMatrix(m [][]int, positions []int, wsize int, hetcol int, homcol int
 			r := compareClasses(prevclasses, classes)
 			// recombination
 			if r != nil {
-				if r[0] == 7 {
-					fmt.Println(classes, prevclasses)
-				}
 				var actual Recombi
 				actual.position = getPosition(m, positions, i, wsize, prevclasses, classes, hetcol, homcol)
 				actual.siblings = r
