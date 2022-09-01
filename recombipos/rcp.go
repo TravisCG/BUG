@@ -134,6 +134,47 @@ func getPosition(m [][]int, positions []int, startpos int, wsize int, prevclasse
 	return positions[startpos + i]
 }
 
+// Create a filtered matrix
+func filtMatrix(m [][]int, positions []int, hetcol int, homcol int) (fm [][]int, fp []int) {
+	fm = make([][]int, 0)
+	fp = make([]int, 0)
+
+	for i:=0; i < len(m); i++ {
+		if m[i][hetcol] == 1 && m[i][homcol] == 0 {
+			errorflag := false
+			for j:=0; j < len(m[i]); j++ {
+				if m[i][j] > 1 {
+					fmt.Println("Sequencing error:", positions[i], j)
+					errorflag = true
+				}
+			}
+			if errorflag {
+				continue
+			}
+			fm = append(fm, m[i])
+			fp = append(fp, positions[i])
+		}
+		if m[i][hetcol] == 1 && m[i][homcol] == 2 {
+			errorflag := false
+			vari := make([]int, len(m[i]))
+			for j:=0; j < len(m[i]); j++ {
+				vari[j] = m[i][j] - 1
+				if m[i][j] == 0 {
+					fmt.Println("Sequencing error:", positions[i], j)
+					errorflag = true
+				}
+			}
+			if errorflag {
+				continue
+			}
+			fm = append(fm, vari)
+			fp = append(fp, positions[i])
+		}
+	}
+
+	return fm, fp
+}
+
 func processMatrix(m [][]int, positions []int, wsize int, hetcol int, homcol int) ([]Recombi, string){
 	var ret []Recombi
 	var classes string
@@ -151,14 +192,12 @@ func processMatrix(m [][]int, positions []int, wsize int, hetcol int, homcol int
 		// go through the window
 		classabu := make(map[string]int)
 		for j:=0; j < wsize; j++ {
-			if m[i+j][hetcol] == 1 && (m[i+j][homcol] == 0 || m[i+j][homcol] == 2){
-				classes = clustering(m[i+j], hetcol, homcol)
-				_,exists := classabu[classes]
-				if !exists {
-					classabu[classes] = 0
-				}
-				classabu[classes] += 1
+			classes = clustering(m[i+j], hetcol, homcol)
+			_,exists := classabu[classes]
+			if !exists {
+				classabu[classes] = 0
 			}
+			classabu[classes] += 1
 		}
 		// get most abundant class
 		max := 0
@@ -166,27 +205,32 @@ func processMatrix(m [][]int, positions []int, wsize int, hetcol int, homcol int
 		for k,v := range classabu {
 			if v > max {
 				maxclass = k
+				max = v
 			}
 		}
 		if maxclass == "" {
 			continue
 		}
 		if first {
-			firstclasses = classes
+			firstclasses = maxclass
 			first = false
+			prevclasses = maxclass
 		} else {
 			// clustering
-			classes = normclasses(classes, prevclasses)
+			classes = normclasses(maxclass, prevclasses)
 			r := compareClasses(prevclasses, classes)
 			// recombination
 			if r != nil {
+				if r[0] == 7 {
+					fmt.Println(classes, prevclasses)
+				}
 				var actual Recombi
 				actual.position = getPosition(m, positions, i, wsize, prevclasses, classes, hetcol, homcol)
 				actual.siblings = r
 				ret = append(ret, actual)
 			}
+			prevclasses = classes
 		}
-		prevclasses = classes
 	}
 	return ret, firstclasses
 }
@@ -245,9 +289,15 @@ func writeBED(rp []Recombi, firstclasses string, contig string, contiglen int, s
 func processContig(m [][]int, positions []int, wsize int, contig string, contiglen int, mother int, father int, sibnames []string) {
 	var recpos []Recombi
 	var firstclasses string
-	recpos,firstclasses = processMatrix(m, positions, wsize, mother, father)
+	var filtm [][]int
+	var filtp []int
+
+	filtm,filtp = filtMatrix(m, positions, mother, father)
+	recpos,firstclasses = processMatrix(filtm, filtp, wsize, mother, father)
 	writeBED(recpos, firstclasses, contig, contiglen, sibnames, mother, father)
-	recpos,firstclasses = processMatrix(m, positions, wsize, father, mother)
+
+	filtm,filtp = filtMatrix(m, positions, father, mother)
+	recpos,firstclasses = processMatrix(filtm, filtp, wsize, father, mother)
 	writeBED(recpos, firstclasses, contig, contiglen, sibnames, father, mother)
 }
 
