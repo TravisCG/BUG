@@ -100,6 +100,20 @@ func clustering(m []int, hetcol int, homcol int) string {
 	return classes.String()
 }
 
+func antiClass(classes string) string {
+	anticlass := strings.Builder{}
+	for j:=0; j < len(classes); j++ {
+		if classes[j] != 'x' {
+			num,_ := strconv.Atoi(string(classes[j]))
+			i := int(math.Abs(float64(num - 1)))  //TODO 2 become 1. It can couse problem?
+			anticlass.WriteString(strconv.Itoa(i))
+		} else {
+			anticlass.WriteString("x")
+		}
+	}
+	return anticlass.String()
+}
+
 func normclasses(classes string, prev string) string {
 	diff := 0
 	anticlass := strings.Builder{}
@@ -109,7 +123,7 @@ func normclasses(classes string, prev string) string {
 		}
 		if classes[j] != 'x' {
 			num,_ := strconv.Atoi(string(classes[j]))
-			i := int(math.Abs(float64(num - 1)))
+			i := int(math.Abs(float64(num - 1))) //TODO 2 become 1. Possible bug?
 			anticlass.WriteString(strconv.Itoa(i))
 		} else {
 			anticlass.WriteString("x")
@@ -124,11 +138,10 @@ func normclasses(classes string, prev string) string {
 func getPosition(m [][]int, positions []int, startpos int, wsize int, prevclasses string, classes string, hetcol int, homcol int) int {
 	var i int
 	for i=0; i < wsize; i++ {
-		if m[startpos + i][hetcol] == 1 && (m[startpos+i][homcol] == 0 || m[startpos + i][homcol] == 2){
-			actclass := clustering(m[startpos + i], hetcol, homcol)
-			if actclass == classes {
-				break
-			}
+		actclass := clustering(m[startpos + i], hetcol, homcol)
+		anticlass := antiClass(actclass)
+		if actclass == classes || anticlass == classes {
+			break
 		}
 	}
 	return positions[startpos + i]
@@ -144,7 +157,7 @@ func filtMatrix(m [][]int, positions []int, hetcol int, homcol int) (fm [][]int,
 			errorflag := false
 			for j:=0; j < len(m[i]); j++ {
 				if m[i][j] > 1 {
-					fmt.Println("Sequencing error:", positions[i], j)
+					//fmt.Println("Sequencing error:", positions[i], j)
 					errorflag = true
 				}
 			}
@@ -160,7 +173,7 @@ func filtMatrix(m [][]int, positions []int, hetcol int, homcol int) (fm [][]int,
 			for j:=0; j < len(m[i]); j++ {
 				vari[j] = m[i][j] - 1
 				if m[i][j] == 0 {
-					fmt.Println("Sequencing error:", positions[i], j)
+					//fmt.Println("Sequencing error:", positions[i], j)
 					errorflag = true
 				}
 			}
@@ -173,6 +186,46 @@ func filtMatrix(m [][]int, positions []int, hetcol int, homcol int) (fm [][]int,
 	}
 
 	return fm, fp
+}
+
+func ShannonEnt(classabu map[string]int) float64 {
+	var sum int = 0
+	var shannon float64 = 0.0
+	var p float64
+
+	for _,v := range classabu {
+		sum += v
+	}
+
+	for _,v := range classabu {
+		p = float64(v) / float64(sum)
+		shannon += p * math.Log(p) * -1.0
+	}
+
+	return shannon
+}
+
+func getMaxClass(m [][]int, startpos int, wsize int, hetcol int, homcol int) (string, float64) {
+	var classes string
+	classabu := make(map[string]int)
+	for j:=0; j < wsize; j++ {
+		classes = clustering(m[startpos + j], hetcol, homcol)
+		_,exists := classabu[classes]
+		if !exists {
+			classabu[classes] = 0
+		}
+		classabu[classes]++
+	}
+	ent := ShannonEnt(classabu)
+	max := 0
+	maxclass := ""
+	for k,v := range classabu {
+		if v > max {
+			max = v
+			maxclass = k
+		}
+	}
+	return maxclass, ent
 }
 
 func processMatrix(m [][]int, positions []int, wsize int, hetcol int, homcol int) ([]Recombi, string){
@@ -190,25 +243,8 @@ func processMatrix(m [][]int, positions []int, wsize int, hetcol int, homcol int
 
 	for i:=0; i < len(m) - wsize; i++ {
 		// go through the window
-		classabu := make(map[string]int)
-		for j:=0; j < wsize; j++ {
-			classes = clustering(m[i+j], hetcol, homcol)
-			_,exists := classabu[classes]
-			if !exists {
-				classabu[classes] = 0
-			}
-			classabu[classes] += 1
-		}
-		// get most abundant class
-		max := 0
-		maxclass := ""
-		for k,v := range classabu {
-			if v > max {
-				maxclass = k
-				max = v
-			}
-		}
-		if maxclass == "" {
+		maxclass, entropy := getMaxClass(m, i, wsize, hetcol, homcol)
+		if maxclass == "" || entropy > 2.0 {
 			continue
 		}
 		if first {
@@ -224,7 +260,10 @@ func processMatrix(m [][]int, positions []int, wsize int, hetcol int, homcol int
 				var actual Recombi
 				actual.position = getPosition(m, positions, i, wsize, prevclasses, classes, hetcol, homcol)
 				actual.siblings = r
-				ret = append(ret, actual)
+			
+				if len(ret) == 0 || actual.position > ret[len(ret)-1].position{
+					ret = append(ret, actual)
+				}
 			}
 			prevclasses = classes
 		}
