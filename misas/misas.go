@@ -6,6 +6,7 @@ import (
 	"io"
 	"fmt"
 	"github.com/biogo/hts/sam"
+	"math"
 )
 
 type Window struct {
@@ -13,11 +14,37 @@ type Window struct {
 	Total   []int64;
 }
 
-func findProblems(storage map[string]Window) {
+func bincoef(k int64, n int64) float64 {
+	var s float64 = 1.0
+	var i int64
+	if n-k < k {
+		k = n - k
+	}
+	for i=0; i < k; i++ {
+		s *= float64(n-i) / float64(i+1)
+	}
+	return s
+}
+
+func binomTest(k int64, n int64, p float64) float64 {
+	var s float64 = 0.0
+	var i int64
+	for i=k; i <= n; i++ {
+		s += bincoef(i,n) * math.Pow(p,float64(i)) * math.Pow(1.0 - p, float64(n - i))
+	}
+	return s
+}
+
+func findProblems(storage map[string]Window, mincoverage int64, limit float64) {
 	for refName,window := range storage {
 		l := len(window.Clipped)
 		for i:=0; i < l; i++ {
-			fmt.Println(refName, window.Clipped[i], window.Total[i])
+			if window.Total[i] >= mincoverage {
+				p := binomTest(window.Clipped[i], window.Total[i], 0.5)
+				if p < limit {
+					fmt.Println(refName, window.Clipped[i], window.Total[i],p)
+				}
+			}
 		}
 	}
 }
@@ -25,6 +52,8 @@ func findProblems(storage map[string]Window) {
 func main(){
 	var windowsize int = 100
 	var minclipping int = 200
+	var mincoverage int64 = 16
+	var limit float64 = 0.05
 	var storage map[string]Window
 
 	storage = make(map[string]Window)
@@ -54,7 +83,7 @@ func main(){
 			storage[rec.Ref.Name()] = actual
 		}
 
-		if len(rec.Cigar) > 0 && (rec.Cigar[0].Type() == sam.CigarSoftClipped || rec.Cigar[0].Type() == sam.CigarHardClipped) {
+		if len(rec.Cigar) > 0 && rec.Flags & 2048 == 0 && rec.Flags & 256 == 0 && (rec.Cigar[0].Type() == sam.CigarSoftClipped || rec.Cigar[0].Type() == sam.CigarHardClipped) {
 			if rec.Cigar[0].Len() > minclipping {
 				//fmt.Println(rec.Ref.Name(), rec.Pos, rec.Cigar[0].Len())
 				storage[rec.Ref.Name()].Clipped[rec.Pos / windowsize]++
@@ -63,5 +92,5 @@ func main(){
 		storage[rec.Ref.Name()].Total[rec.Pos / windowsize]++
 	}
 
-	findProblems(storage)
+	findProblems(storage, mincoverage, limit)
 }
