@@ -3,10 +3,18 @@ package main
 import ("fmt"
 	"math/rand"
 	"strconv"
+	"strings"
+	"os"
 )
 type ParentChr struct {
 	mother int
 	father int
+}
+
+func printHelp() {
+	fmt.Println("-r: output reference name in fasta")
+	fmt.Println("-s: seed (default 100)")
+	fmt.Println("VCF will be seen in stdout")
 }
 
 func printgt(whichchr int){
@@ -73,6 +81,23 @@ func main() {
 	var seed int64 = 100
 	var recombimut float64 = 0.0001
 	var falsecal float64 = 0.001
+	var fasta strings.Builder
+	var refname string
+
+	for i:=0; i < len(os.Args); i++ {
+		if os.Args[i] == "-f" {
+			refname = os.Args[i+1]
+		}
+		if os.Args[i] == "-s" {
+			seed,_ = strconv.ParseInt(os.Args[i+1], 10, 64)
+		}
+		if os.Args[i] == "-h" {
+			printHelp()
+			return
+		}
+	}
+
+	fasta.WriteString(">onechr\n")
 
 	rand.Seed(seed)
 	fmt.Println("##fileformat=VCFv4.2")
@@ -93,8 +118,9 @@ func main() {
 
 	var count int = 1
 	for i:= 0; i < chrlen; i++ {
+		ref := nuc[rand.Intn(4)]
 		if rand.Float64() < mutprob {
-			ref := nuc[rand.Intn(4)]
+			ref  = nuc[rand.Intn(4)]
 			alt := nuc[rand.Intn(4)]
 			whichmotherchr := rand.Intn(4) // 0 neither chr, 1 first, 2 second, 3 both chr contain mutation
 			whichfatherchr := rand.Intn(4) // which father haplotype contains the mutation?
@@ -122,7 +148,7 @@ func main() {
 			}
 			// put VCF record to the standard output
 			fmt.Print("onechr\t")
-			fmt.Print(strconv.Itoa(i) + "\t")
+			fmt.Print(strconv.Itoa(i+1) + "\t")
 			fmt.Print("id" + strconv.Itoa(count) + "\t")
 			fmt.Print(ref + "\t")
 			fmt.Print(alt + "\t")
@@ -136,5 +162,11 @@ func main() {
 			fmt.Println()
 			count++
 		}
+		fasta.WriteString(ref)
 	}
+	// save reference fasta file
+	f,_ := os.OpenFile(refname, os.O_CREATE | os.O_WRONLY, 0660)
+	f.WriteString(fasta.String() + "\n")
+	f.Close()
+
 }
