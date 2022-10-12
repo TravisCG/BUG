@@ -12,7 +12,7 @@ type ParentChr struct {
 }
 
 func printHelp() {
-	fmt.Println("-r: output reference name in fasta")
+	fmt.Println("-f: output reference name in fasta")
 	fmt.Println("-s: seed (default 100)")
 	fmt.Println("VCF will be seen in stdout")
 }
