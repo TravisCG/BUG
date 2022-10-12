@@ -42,6 +42,35 @@ func openvcf(filename string) (*bufio.Scanner) {
 	return vcf
 }
 
+func refRead(filename string) (map[string]string) {
+	var header string
+	var seq strings.Builder
+	fastastore := make(map[string]string)
+
+	file, e := os.Open(filename)
+	if e != nil {
+		fmt.Println("Cannot open reference fasta")
+		file.Close()
+		return nil
+	}
+	fasta := bufio.NewScanner(file)
+	for fasta.Scan() {
+		line := fasta.Text()
+		if line[0] == '>' {
+			if seq.Len() > 0{
+				fastastore[header] = seq.String()
+			}
+			header = line[1:]
+			seq = strings.Builder{}
+		} else {
+			seq.WriteString(line)
+		}
+	}
+	fastastore[header] = seq.String()
+	file.Close()
+	return fastastore
+}
+
 // Parse the genotype 0: hom ref, 1: het, 2: hom alt, 3: hard to find out what it is
 func getGT(fields string) (int) {
 	gt := strings.Split(fields, ":")[0]
@@ -148,16 +177,19 @@ func getPosition(m [][]int, positions []int, startpos int, wsize int, prevclasse
 }
 
 // Create a filtered matrix
-func filtMatrix(m [][]int, positions []int, hetcol int, homcol int) (fm [][]int, fp []int) {
+func filtMatrix(m [][]int, positions []int, nucs []string, refs []string, hetcol int, homcol int) (fm [][]int, fp []int) {
 	fm = make([][]int, 0)
 	fp = make([]int, 0)
 
 	for i:=0; i < len(m); i++ {
+		if len(nucs[i]) > 1 || len(refs[i]) > 1 {
+			continue
+		}
 		if m[i][hetcol] == 1 && m[i][homcol] == 0 {
 			errorflag := false
 			for j:=0; j < len(m[i]); j++ {
 				if m[i][j] > 1 {
-					//fmt.Println("Sequencing error:", positions[i], j)
+					fmt.Println("Sequencing error:", positions[i], j)
 					errorflag = true
 				}
 			}
@@ -173,7 +205,7 @@ func filtMatrix(m [][]int, positions []int, hetcol int, homcol int) (fm [][]int,
 			for j:=0; j < len(m[i]); j++ {
 				vari[j] = m[i][j] - 1
 				if m[i][j] == 0 {
-					//fmt.Println("Sequencing error:", positions[i], j)
+					fmt.Println("Sequencing error:", positions[i], j)
 					errorflag = true
 				}
 			}
@@ -322,23 +354,66 @@ func writeBED(rp []Recombi, firstclasses string, contig string, contiglen int, s
 	}
 }
 
-func processContig(m [][]int, positions []int, wsize int, contig string, contiglen int, mother int, father int, sibnames []string) {
+func writeHAP(m [][]int, positions []int, refs []string, nucs []string, recpos []Recombi, parentcol int, outfilename string, fastarecord string) {
+	hap1 := strings.Builder{}
+	hap2 := strings.Builder{}
+	var hapstart1 int = 0
+	var hapstart2 int = 0
+
+	for i:=0; i < len(m); i++ {
+		pos := positions[i] - 1
+		// appending non-variable sequences from reference
+		hap1.WriteString(fastarecord[hapstart1:pos])
+		hap2.WriteString(fastarecord[hapstart2:pos])
+		// decide which variation goes to which haplotype
+		switch m[i][parentcol] {
+		case 0:
+			// no variation
+		case 1:
+		case 2:
+			// homozygous alt sequence
+			hap1.WriteString(nucs[i])
+			hap2.WriteString(nucs[i])
+			pos = pos + len(refs[i])
+		case 3:
+			fmt.Println("What a heck is going on?")
+		default:
+		}
+		// preparing for the next iteration
+		hapstart1 = pos
+		hapstart2 = pos
+	}
+	hap1.WriteString(fastarecord[hapstart1:])
+	hap2.WriteString(fastarecord[hapstart2:])
+
+	out,_ := os.OpenFile(outfilename, os.O_CREATE | os.O_WRONLY, 0755)
+	out.WriteString(">hap1\n")
+	out.WriteString(hap1.String() + "\n")
+	out.WriteString(">hap2\n")
+	out.WriteString(hap2.String() + "\n")
+	out.Close()
+}
+
+func processContig(m [][]int, positions []int, wsize int, contig string, contiglen int, mother int, father int, sibnames []string, nucs []string, refs []string, fastarecord string) {
 	var recpos []Recombi
 	var firstclasses string
 	var filtm [][]int
 	var filtp []int
 
-	filtm,filtp = filtMatrix(m, positions, mother, father)
+	filtm,filtp = filtMatrix(m, positions, nucs, refs, mother, father)
 	recpos,firstclasses = processMatrix(filtm, filtp, wsize, mother, father)
 	writeBED(recpos, firstclasses, contig, contiglen, sibnames, mother, father)
+	writeHAP(m, positions, refs, nucs, recpos, mother, "motherhaplotype.fasta", fastarecord)
 
-	filtm,filtp = filtMatrix(m, positions, father, mother)
+	filtm,filtp = filtMatrix(m, positions, nucs, refs, father, mother)
 	recpos,firstclasses = processMatrix(filtm, filtp, wsize, father, mother)
 	writeBED(recpos, firstclasses, contig, contiglen, sibnames, father, mother)
+	writeHAP(m, positions, refs, nucs, recpos, father, "fatherhaplotype.fasta", fastarecord)
 }
 
 func main() {
 	var vcfname string = ""
+	var refname string = ""
 	var motherid string = ""
 	var fatherid string = ""
 	var windowsize int = 16
@@ -360,6 +435,9 @@ func main() {
 		if os.Args[i] == "-w" {
 			windowsize,_ = strconv.Atoi(os.Args[i+1])
 		}
+		if os.Args[i] == "-r" {
+			refname = os.Args[i+1]
+		}
 	}
 
 	var err bool = false
@@ -379,6 +457,8 @@ func main() {
 		return
 	}
 
+	fasta := refRead(refname)
+
 	vcf := openvcf(vcfname)
 	if vcf == nil {
 		return
@@ -391,6 +471,8 @@ func main() {
 	var matrix [][]int // all windows per contig for every individual
 	var row []int // sum of het genotypes in a window per every individual
 	var poslist []int
+	var nucs []string
+	var refs []string
 	var contiglen map[string]int = make(map[string]int)
 	var sibnames []string = make([]string, 0)
 
@@ -430,29 +512,28 @@ func main() {
 			fmt.Println("Invalid VCF file. Position is not integer:", cols[1])
 			return
 		}
-		if len(cols[3]) != 1 || len(cols[4]) != 1 {
-			// Skip indels
-			continue
-		}
 		if ctg != prevctg {
 			if prevctg != "" {
 				// The contig is not the first one
-				processContig(matrix, poslist, windowsize, prevctg, contiglen[prevctg], mothercol - 9, fathercol - 9, sibnames)
+				processContig(matrix, poslist, windowsize, prevctg, contiglen[prevctg], mothercol - 9, fathercol - 9, sibnames, nucs, refs, fasta[prevctg])
 			}
 			// new contig, new matrix
 			matrix = make([][]int,0)
 			poslist = make([]int, 0)
+			nucs = make([]string, 0)
+			refs = make([]string, 0)
 		}
-		if getGT(cols[mothercol]) != 3 && getGT(cols[fathercol]) != 3 {
-			// parse and store the offsprings genotype
-			row = make([]int, len(cols) - 9)
-			for i:=9; i < len(cols); i++ {
-				row[i-9] = getGT(cols[i])
-			}
-			matrix = append(matrix, row)
-			poslist = append(poslist, pos)
+		// parse and store the offsprings genotype
+		row = make([]int, len(cols) - 9)
+		for i:=9; i < len(cols); i++ {
+			row[i-9] = getGT(cols[i])
 		}
+		matrix = append(matrix, row)
+		poslist = append(poslist, pos)
+		nucs = append(nucs, cols[4])
+		refs = append(refs, cols[3])
+
 		prevctg = ctg
 	}
-	processContig(matrix, poslist, windowsize, prevctg, contiglen[prevctg], mothercol - 9, fathercol - 9, sibnames)
+	processContig(matrix, poslist, windowsize, prevctg, contiglen[prevctg], mothercol - 9, fathercol - 9, sibnames, nucs, refs, fasta[prevctg])
 }
