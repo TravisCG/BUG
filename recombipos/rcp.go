@@ -354,22 +354,54 @@ func writeBED(rp []Recombi, firstclasses string, contig string, contiglen int, s
 	}
 }
 
-func writeHAP(m [][]int, positions []int, refs []string, nucs []string, recpos []Recombi, parentcol int, outfilename string, fastarecord string) {
+func hapDecision(flipflop []int, refs []string, nucs []string, genotype []int) (string, string) {
+}
+
+func writeHAP(m [][]int, positions []int, firstclasses string, refs []string, nucs []string, recpos []Recombi, parentcol int, outfilename string, fastarecord string) {
 	hap1 := strings.Builder{}
 	hap2 := strings.Builder{}
+	flipflop := make([]int, len(m[0]))
 	var hapstart1 int = 0
 	var hapstart2 int = 0
+	var rpindex int = 0
+
+	if len(firstclasses) == 0 {
+		return
+	}
+	for i:=0; i < len(m[0]); i++ {
+		if firstclasses[i] != 'x' {
+			flipflop[i],_ = strconv.Atoi(string(firstclasses[i]))
+			if flipflop[i] > 1 {
+				flipflop[i] = 1
+			}
+		} else {
+			flipflop[i] = 2
+		}
+	}
 
 	for i:=0; i < len(m); i++ {
 		pos := positions[i] - 1
+		// change the siblings groups if recombination occured
+		if rpindex < len(recpos) && recpos[rpindex].position > pos {
+			for s:=0; s < len(recpos[rpindex].siblings); s++ {
+				sib := recpos[rpindex].siblings[s]
+				flipflop[sib] = int(math.Abs(float64(flipflop[sib] - 1)))
+			}
+			rpindex++
+		}
 		// appending non-variable sequences from reference
 		hap1.WriteString(fastarecord[hapstart1:pos])
 		hap2.WriteString(fastarecord[hapstart2:pos])
 		// decide which variation goes to which haplotype
 		switch m[i][parentcol] {
 		case 0:
-			// no variation
+			// no variation, both haplotypes gets reference
 		case 1:
+			// heterozygous parent. The decision can be difficult
+			n1,n2 := hapDecision(flipflop, refs, nucs, m[i])
+			hap1.WriteString(n1)
+			hap2.WriteString(n2)
+			pos = pos + len(refs[i])
 		case 2:
 			// homozygous alt sequence
 			hap1.WriteString(nucs[i])
@@ -403,12 +435,12 @@ func processContig(m [][]int, positions []int, wsize int, contig string, contigl
 	filtm,filtp = filtMatrix(m, positions, nucs, refs, mother, father)
 	recpos,firstclasses = processMatrix(filtm, filtp, wsize, mother, father)
 	writeBED(recpos, firstclasses, contig, contiglen, sibnames, mother, father)
-	writeHAP(m, positions, refs, nucs, recpos, mother, "motherhaplotype.fasta", fastarecord)
+	writeHAP(m, positions, firstclasses, refs, nucs, recpos, mother, "motherhaplotype.fasta", fastarecord)
 
 	filtm,filtp = filtMatrix(m, positions, nucs, refs, father, mother)
 	recpos,firstclasses = processMatrix(filtm, filtp, wsize, father, mother)
 	writeBED(recpos, firstclasses, contig, contiglen, sibnames, father, mother)
-	writeHAP(m, positions, refs, nucs, recpos, father, "fatherhaplotype.fasta", fastarecord)
+	writeHAP(m, positions, firstclasses, refs, nucs, recpos, father, "fatherhaplotype.fasta", fastarecord)
 }
 
 func main() {
