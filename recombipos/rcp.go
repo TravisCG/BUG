@@ -177,7 +177,7 @@ func getPosition(m [][]int, positions []int, startpos int, wsize int, prevclasse
 }
 
 // Create a filtered matrix
-func filtMatrix(m [][]int, positions []int, nucs []string, refs []string, hetcol int, homcol int) (fm [][]int, fp []int) {
+func filtMatrix(m [][]int, positions []int, nucs []string, refs []string, hetcol int, homcol int, contig string) (fm [][]int, fp []int) {
 	fm = make([][]int, 0)
 	fp = make([]int, 0)
 
@@ -189,7 +189,7 @@ func filtMatrix(m [][]int, positions []int, nucs []string, refs []string, hetcol
 			errorflag := false
 			for j:=0; j < len(m[i]); j++ {
 				if m[i][j] > 1 {
-					fmt.Println("Sequencing error:", positions[i], j)
+					fmt.Println("Sequencing error:", contig, positions[i], j)
 					errorflag = true
 				}
 			}
@@ -205,7 +205,7 @@ func filtMatrix(m [][]int, positions []int, nucs []string, refs []string, hetcol
 			for j:=0; j < len(m[i]); j++ {
 				vari[j] = m[i][j] - 1
 				if m[i][j] == 0 {
-					fmt.Println("Sequencing error:", positions[i], j)
+					fmt.Println("Sequencing error:", contig, positions[i], j)
 					errorflag = true
 				}
 			}
@@ -432,12 +432,12 @@ func processContig(m [][]int, positions []int, wsize int, contig string, contigl
 	var filtm [][]int
 	var filtp []int
 
-	filtm,filtp = filtMatrix(m, positions, nucs, refs, mother, father)
+	filtm,filtp = filtMatrix(m, positions, nucs, refs, mother, father, contig)
 	recpos,firstclasses = processMatrix(filtm, filtp, wsize, mother, father)
 	writeBED(recpos, firstclasses, contig, contiglen, sibnames, mother, father)
 	writeHAP(m, positions, firstclasses, refs, nucs, recpos, mother, "motherhaplotype.fasta", fastarecord)
 
-	filtm,filtp = filtMatrix(m, positions, nucs, refs, father, mother)
+	filtm,filtp = filtMatrix(m, positions, nucs, refs, father, mother, contig)
 	recpos,firstclasses = processMatrix(filtm, filtp, wsize, father, mother)
 	writeBED(recpos, firstclasses, contig, contiglen, sibnames, father, mother)
 	writeHAP(m, positions, firstclasses, refs, nucs, recpos, father, "fatherhaplotype.fasta", fastarecord)
