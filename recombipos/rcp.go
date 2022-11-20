@@ -23,6 +23,7 @@ func printHelp() {
 	fmt.Println("-m             Mother id in the VCF file")
 	fmt.Println("-f             Father id in the VCF file")
 	fmt.Println("-w             Window size")
+	fmt.Println("-r             Reference sequence in fasta format")
 	fmt.Println("All other individual in the VCF file threated as offsprings")
 }
 
@@ -60,7 +61,7 @@ func refRead(filename string) (map[string]string) {
 			if seq.Len() > 0{
 				fastastore[header] = seq.String()
 			}
-			header = line[1:]
+			header = strings.Split(line[1:], " ")[0]
 			seq = strings.Builder{}
 		} else {
 			seq.WriteString(line)
@@ -236,7 +237,31 @@ func ShannonEnt(classabu map[string]int) float64 {
 
 	return shannon
 }
+/*
+func findError(m [][]int, positions []int,startpos int, wsize int, hetcol int, homcol int, prevclass string, actualclass string, contig string) {
+	var pc bool = true
+	var ac bool = true
 
+	for j:=0; j < wsize; j++ {
+		classes := clustering(m[startpos + j], hetcol, homcol)
+		for i:=0; i < len(classes); i++ {
+			if classes[i] == 'x' {
+				continue
+			}
+			if classes[i] != prevclass[i] {
+				pc = false
+			}
+			if classes[i] != actualclass[i] {
+				ac = false
+			}
+			if ac == false && pc == false {
+				fmt.Println("Wrong classification:", contig, positions[startpos + j])
+				break
+			}
+		}
+	}
+}
+*/
 func getMaxClass(m [][]int, startpos int, wsize int, hetcol int, homcol int) (string, float64) {
 	var classes string
 	classabu := make(map[string]int)
@@ -260,7 +285,7 @@ func getMaxClass(m [][]int, startpos int, wsize int, hetcol int, homcol int) (st
 	return maxclass, ent
 }
 
-func processMatrix(m [][]int, positions []int, wsize int, hetcol int, homcol int) ([]Recombi, string){
+func processMatrix(m [][]int, positions []int, wsize int, hetcol int, homcol int, contig string) ([]Recombi, string){
 	var ret []Recombi
 	var classes string
 	var prevclasses string
@@ -284,6 +309,8 @@ func processMatrix(m [][]int, positions []int, wsize int, hetcol int, homcol int
 			first = false
 			prevclasses = maxclass
 		} else {
+			// error search for Maher
+			//findError(m, positions, i, wsize, hetcol, homcol, prevclasses, maxclass, contig) //TODO this is just a quick task
 			// clustering
 			classes = normclasses(maxclass, prevclasses)
 			r := compareClasses(prevclasses, classes)
@@ -355,6 +382,7 @@ func writeBED(rp []Recombi, firstclasses string, contig string, contiglen int, s
 }
 
 func hapDecision(flipflop []int, refs []string, nucs []string, genotype []int) (string, string) {
+	return "", ""
 }
 
 func writeHAP(m [][]int, positions []int, firstclasses string, refs []string, nucs []string, recpos []Recombi, parentcol int, outfilename string, fastarecord string) {
@@ -401,12 +429,12 @@ func writeHAP(m [][]int, positions []int, firstclasses string, refs []string, nu
 			n1,n2 := hapDecision(flipflop, refs, nucs, m[i])
 			hap1.WriteString(n1)
 			hap2.WriteString(n2)
-			pos = pos + len(refs[i])
+			//pos = pos + len(refs[i])
 		case 2:
 			// homozygous alt sequence
 			hap1.WriteString(nucs[i])
 			hap2.WriteString(nucs[i])
-			pos = pos + len(refs[i])
+			//pos = pos + len(refs[i])
 		case 3:
 			fmt.Println("What a heck is going on?")
 		default:
@@ -433,12 +461,12 @@ func processContig(m [][]int, positions []int, wsize int, contig string, contigl
 	var filtp []int
 
 	filtm,filtp = filtMatrix(m, positions, nucs, refs, mother, father, contig)
-	recpos,firstclasses = processMatrix(filtm, filtp, wsize, mother, father)
+	recpos,firstclasses = processMatrix(filtm, filtp, wsize, mother, father, contig)
 	writeBED(recpos, firstclasses, contig, contiglen, sibnames, mother, father)
 	writeHAP(m, positions, firstclasses, refs, nucs, recpos, mother, "motherhaplotype.fasta", fastarecord)
 
 	filtm,filtp = filtMatrix(m, positions, nucs, refs, father, mother, contig)
-	recpos,firstclasses = processMatrix(filtm, filtp, wsize, father, mother)
+	recpos,firstclasses = processMatrix(filtm, filtp, wsize, father, mother, contig)
 	writeBED(recpos, firstclasses, contig, contiglen, sibnames, father, mother)
 	writeHAP(m, positions, firstclasses, refs, nucs, recpos, father, "fatherhaplotype.fasta", fastarecord)
 }
@@ -483,6 +511,10 @@ func main() {
 	}
 	if vcfname == "" {
 		fmt.Println("VCF file not specified")
+		err = true
+	}
+	if refname == "" {
+		fmt.Println("Reference fasta file missing")
 		err = true
 	}
 	if err {
@@ -547,7 +579,12 @@ func main() {
 		if ctg != prevctg {
 			if prevctg != "" {
 				// The contig is not the first one
-				processContig(matrix, poslist, windowsize, prevctg, contiglen[prevctg], mothercol - 9, fathercol - 9, sibnames, nucs, refs, fasta[prevctg])
+				seq, exists := fasta[prevctg]
+				if exists {
+					processContig(matrix, poslist, windowsize, prevctg, contiglen[prevctg], mothercol - 9, fathercol - 9, sibnames, nucs, refs, seq)
+				} else {
+					fmt.Println(prevctg,"not fount in the reference")
+				}
 			}
 			// new contig, new matrix
 			matrix = make([][]int,0)
