@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"compress/gzip"
 	"os"
+	"io"
 	"strings"
 	"strconv"
 	"regexp"
@@ -54,17 +55,22 @@ func refRead(filename string) (map[string]string) {
 		file.Close()
 		return nil
 	}
-	fasta := bufio.NewScanner(file)
-	for fasta.Scan() {
-		line := fasta.Text()
+	fasta := bufio.NewReader(file)
+	for {
+		line,_,err := fasta.ReadLine()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+		}
 		if line[0] == '>' {
 			if seq.Len() > 0{
 				fastastore[header] = seq.String()
 			}
-			header = strings.Split(line[1:], " ")[0]
+			header = strings.Split(string(line[1:]), " ")[0]
 			seq = strings.Builder{}
 		} else {
-			seq.WriteString(line)
+			seq.WriteString(string(line))
 		}
 	}
 	fastastore[header] = seq.String()
@@ -434,7 +440,7 @@ func writeHAP(m [][]int, positions []int, firstclasses string, refs []string, nu
 			// homozygous alt sequence
 			hap1.WriteString(nucs[i])
 			hap2.WriteString(nucs[i])
-			//pos = pos + len(refs[i])
+			pos = pos + len(refs[i])
 		case 3:
 			fmt.Println("What a heck is going on?")
 		default:
