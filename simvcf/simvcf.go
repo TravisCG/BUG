@@ -14,6 +14,9 @@ type ParentChr struct {
 func printHelp() {
 	fmt.Println("-f: output reference name in fasta")
 	fmt.Println("-s: seed (default 100)")
+	fmt.Println("-m: recombination mutation rate (default: 0.0001)")
+	fmt.Println("-e: sequencing error rate (default: 0.001)")
+	fmt.Println("-l: chromosome length (default: 2000000)")
 	fmt.Println("VCF will be seen in stdout")
 }
 
@@ -94,6 +97,15 @@ func main() {
 		if os.Args[i] == "-h" {
 			printHelp()
 			return
+		}
+		if os.Args[i] == "-e" {
+			falsecal,_ = strconv.ParseFloat(os.Args[i+1], 64)
+		}
+		if os.Args[i] == "-m" {
+			recombimut,_ = strconv.ParseFloat(os.Args[i+1], 64)
+		}
+		if os.Args[i] == "-l" {
+			chrlen,_ = strconv.Atoi(os.Args[i+1])
 		}
 	}
 
