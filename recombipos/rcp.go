@@ -243,31 +243,7 @@ func ShannonEnt(classabu map[string]int) float64 {
 
 	return shannon
 }
-/*
-func findError(m [][]int, positions []int,startpos int, wsize int, hetcol int, homcol int, prevclass string, actualclass string, contig string) {
-	var pc bool = true
-	var ac bool = true
 
-	for j:=0; j < wsize; j++ {
-		classes := clustering(m[startpos + j], hetcol, homcol)
-		for i:=0; i < len(classes); i++ {
-			if classes[i] == 'x' {
-				continue
-			}
-			if classes[i] != prevclass[i] {
-				pc = false
-			}
-			if classes[i] != actualclass[i] {
-				ac = false
-			}
-			if ac == false && pc == false {
-				fmt.Println("Wrong classification:", contig, positions[startpos + j])
-				break
-			}
-		}
-	}
-}
-*/
 func getMaxClass(m [][]int, startpos int, wsize int, hetcol int, homcol int) (string, float64) {
 	var classes string
 	classabu := make(map[string]int)
@@ -315,8 +291,6 @@ func processMatrix(m [][]int, positions []int, wsize int, hetcol int, homcol int
 			first = false
 			prevclasses = maxclass
 		} else {
-			// error search for Maher
-			//findError(m, positions, i, wsize, hetcol, homcol, prevclasses, maxclass, contig) //TODO this is just a quick task
 			// clustering
 			classes = normclasses(maxclass, prevclasses)
 			r := compareClasses(prevclasses, classes)
@@ -387,8 +361,80 @@ func writeBED(rp []Recombi, firstclasses string, contig string, contiglen int, s
 	}
 }
 
-func hapDecision(flipflop []int, refs []string, nucs []string, genotype []int) (string, string) {
-	return "", ""
+func hapDecision(flipflop []int, refs string, nucs string, genotype []int) (string, string) {
+	hap1 := make(map[int]int, 0)
+	hap2 := make(map[int]int, 0)
+
+	// collect all the genotypes per groups
+	for i:=0; i < len(flipflop); i++ {
+		if flipflop[i] == 2 {
+			// Parent column maybe. I will use this information, but right now not
+		} else {
+			if flipflop[i] == 0 {
+				// first haplotype
+				_,e := hap1[genotype[i]]
+				if !e {
+					hap1[genotype[i]] = 0
+				}
+				hap1[genotype[i]]++
+			} else {
+				// second haplotype
+				_,e := hap2[genotype[i]]
+				if !e {
+					hap2[genotype[i]] = 0
+				}
+				hap2[genotype[i]]++
+			}
+		}
+	}
+	// voting for the most abundant genotype in the group
+	// FIXME if two groups has the same abundance, we choose the first one, possible could cause error
+	max := 0
+	hmax1 := 0
+	for k,v:= range(hap1){
+		if v > max{
+			max = v
+			hmax1 = k
+		}
+	}
+	max = 0
+	hmax2 := 0
+	for k,v := range(hap2){
+		if v > max {
+			max = v
+			hmax2 = k
+		}
+	}
+
+	// decision
+	var hap1str string
+	switch hmax1 {
+	case 0:
+		hap1str = refs
+	case 1:
+		if hmax2 == 0 || hmax2 == 2{
+			hap1str = nucs
+		} else {
+			hap1str = refs // haplotype resolving is impossible, we always choose ref
+		}
+	case 2:
+		hap1str = nucs
+	}
+
+	var hap2str string
+	switch hmax2 {
+	case 0:
+		hap2str = refs
+	case 1:
+		if hmax1 == 0 || hmax1 == 2 {
+			hap2str = nucs
+		} else {
+			hap2str = nucs // haplotype resolving is impossible, we always choose alt
+		}
+	case 2:
+		hap2str = nucs
+	}
+	return hap1str, hap2str
 }
 
 func writeHAP(m [][]int, positions []int, firstclasses string, refs []string, nucs []string, recpos []Recombi, parentcol int, outfilename string, fastarecord string) {
@@ -432,7 +478,7 @@ func writeHAP(m [][]int, positions []int, firstclasses string, refs []string, nu
 			// no variation, both haplotypes gets reference
 		case 1:
 			// heterozygous parent. The decision can be difficult
-			n1,n2 := hapDecision(flipflop, refs, nucs, m[i])
+			n1,n2 := hapDecision(flipflop, refs[i], nucs[i], m[i])
 			hap1.WriteString(n1)
 			hap2.WriteString(n2)
 			//pos = pos + len(refs[i])
