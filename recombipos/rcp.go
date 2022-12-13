@@ -325,7 +325,7 @@ func writeBED(rp []Recombi, firstclasses string, contig string, contiglen int, s
 	for i:=0; i < len(sibnames); i++ {
 		if firstclasses[i] != 'x' && i != otherparent && i != parent{
 			prevpos[i] = 0
-			out[i],_ = os.OpenFile(sibnames[i] + "." + sibnames[parent] + ".bed", os.O_CREATE | os.O_APPEND | os.O_WRONLY, 0755)
+			out[i],_ = os.OpenFile(sibnames[i] + "." + sibnames[parent] + ".bed", os.O_CREATE | os.O_APPEND | os.O_WRONLY, 0644)
 			flipflop[i],_ = strconv.Atoi(string(firstclasses[i]))
 			if flipflop[i] > 1 {
 				flipflop[i] = 1
@@ -408,41 +408,44 @@ func hapDecision(flipflop []int, refs string, nucs string, genotype []int) (stri
 
 	// decision
 	var hap1str string
-	switch hmax1 {
-	case 0:
-		hap1str = refs
-	case 1:
-		if hmax2 == 0 || hmax2 == 2{
-			hap1str = nucs
-		} else {
-			hap1str = refs // haplotype resolving is impossible, we always choose ref
-		}
-	case 2:
-		hap1str = nucs
-	}
-
 	var hap2str string
-	switch hmax2 {
-	case 0:
+
+	if hmax1 == 0 && hmax2 == 0 {
+		hap1str = refs
 		hap2str = refs
-	case 1:
-		if hmax1 == 0 || hmax1 == 2 {
-			hap2str = nucs
-		} else {
-			hap2str = nucs // haplotype resolving is impossible, we always choose alt
-		}
-	case 2:
+	} else if hmax1 == 1 && hmax2 == 0 {
+		hap1str = nucs
+		hap2str = refs
+	} else if hmax1 == 2 && hmax2 == 0 {
+		hap1str = nucs
+		hap2str = refs
+	} else if hmax1 == 0 && hmax2 == 1 {
+		hap1str = refs
+		hap2str = nucs 
+	} else if hmax1 == 1 && hmax2 == 1 {
+		hap1str = refs
+		hap2str = nucs // there is no way to find out the correct haplotype
+	} else if hmax1 == 2 && hmax2 == 1 {
+		hap1str = nucs
+		hap2str = refs
+	} else if hmax1 == 0 && hmax2 == 2 {
+		hap1str = refs
+		hap2str = nucs
+	} else if hmax1 == 1 && hmax2 == 2 {
+		hap1str = refs
+		hap2str = nucs
+	} else if hmax1 == 2 && hmax2 == 2 {
+		hap1str = nucs
 		hap2str = nucs
 	}
 	return hap1str, hap2str
 }
 
-func writeHAP(m [][]int, positions []int, firstclasses string, refs []string, nucs []string, recpos []Recombi, parentcol int, outfilename string, fastarecord string) {
+func writeHAP(m [][]int, positions []int, firstclasses string, refs []string, nucs []string, recpos []Recombi, parentcol int, outfilename string, contig string, fastarecord string) {
 	hap1 := strings.Builder{}
 	hap2 := strings.Builder{}
 	flipflop := make([]int, len(m[0]))
-	var hapstart1 int = 0
-	var hapstart2 int = 0
+	var hapstart int = 0
 	var rpindex int = 0
 
 	if len(firstclasses) == 0 {
@@ -462,7 +465,7 @@ func writeHAP(m [][]int, positions []int, firstclasses string, refs []string, nu
 	for i:=0; i < len(m); i++ {
 		pos := positions[i] - 1
 		// change the siblings groups if recombination occured
-		if rpindex < len(recpos) && recpos[rpindex].position > pos {
+		if rpindex < len(recpos) && recpos[rpindex].position < pos {
 			for s:=0; s < len(recpos[rpindex].siblings); s++ {
 				sib := recpos[rpindex].siblings[s]
 				flipflop[sib] = int(math.Abs(float64(flipflop[sib] - 1)))
@@ -470,8 +473,12 @@ func writeHAP(m [][]int, positions []int, firstclasses string, refs []string, nu
 			rpindex++
 		}
 		// appending non-variable sequences from reference
-		hap1.WriteString(fastarecord[hapstart1:pos])
-		hap2.WriteString(fastarecord[hapstart2:pos])
+		if pos > hapstart || pos == hapstart {
+			hap1.WriteString(fastarecord[hapstart:pos])
+			hap2.WriteString(fastarecord[hapstart:pos])
+		} else {
+			continue
+		}
 		// decide which variation goes to which haplotype
 		switch m[i][parentcol] {
 		case 0:
@@ -481,27 +488,25 @@ func writeHAP(m [][]int, positions []int, firstclasses string, refs []string, nu
 			n1,n2 := hapDecision(flipflop, refs[i], nucs[i], m[i])
 			hap1.WriteString(n1)
 			hap2.WriteString(n2)
-			//pos = pos + len(refs[i])
+			pos = pos + len(refs[i])
 		case 2:
 			// homozygous alt sequence
 			hap1.WriteString(nucs[i])
 			hap2.WriteString(nucs[i])
 			pos = pos + len(refs[i])
 		case 3:
-			fmt.Println("What a heck is going on?")
+			fmt.Println("what the hack?", refs[i],nucs[i],contig,positions[i])
 		default:
 		}
-		// preparing for the next iteration
-		hapstart1 = pos
-		hapstart2 = pos
+		hapstart = pos
 	}
-	hap1.WriteString(fastarecord[hapstart1:])
-	hap2.WriteString(fastarecord[hapstart2:])
+	hap1.WriteString(fastarecord[hapstart:])
+	hap2.WriteString(fastarecord[hapstart:])
 
-	out,_ := os.OpenFile(outfilename, os.O_CREATE | os.O_WRONLY, 0755)
-	out.WriteString(">hap1\n")
+	out,_ := os.OpenFile(outfilename, os.O_APPEND | os.O_CREATE | os.O_WRONLY, 0644)
+	out.WriteString(">" + contig + "_hap1\n")
 	out.WriteString(hap1.String() + "\n")
-	out.WriteString(">hap2\n")
+	out.WriteString(">" + contig + "_hap2\n")
 	out.WriteString(hap2.String() + "\n")
 	out.Close()
 }
@@ -515,12 +520,12 @@ func processContig(m [][]int, positions []int, wsize int, contig string, contigl
 	filtm,filtp = filtMatrix(m, positions, nucs, refs, mother, father, contig)
 	recpos,firstclasses = processMatrix(filtm, filtp, wsize, mother, father, contig)
 	writeBED(recpos, firstclasses, contig, contiglen, sibnames, mother, father)
-	writeHAP(m, positions, firstclasses, refs, nucs, recpos, mother, "motherhaplotype.fasta", fastarecord)
+	writeHAP(m, positions, firstclasses, refs, nucs, recpos, mother, "motherhaplotype.fasta", contig, fastarecord)
 
 	filtm,filtp = filtMatrix(m, positions, nucs, refs, father, mother, contig)
 	recpos,firstclasses = processMatrix(filtm, filtp, wsize, father, mother, contig)
 	writeBED(recpos, firstclasses, contig, contiglen, sibnames, father, mother)
-	writeHAP(m, positions, firstclasses, refs, nucs, recpos, father, "fatherhaplotype.fasta", fastarecord)
+	writeHAP(m, positions, firstclasses, refs, nucs, recpos, father, "fatherhaplotype.fasta", contig, fastarecord)
 }
 
 func main() {
@@ -635,7 +640,7 @@ func main() {
 				if exists {
 					processContig(matrix, poslist, windowsize, prevctg, contiglen[prevctg], mothercol - 9, fathercol - 9, sibnames, nucs, refs, seq)
 				} else {
-					fmt.Println(prevctg,"not fount in the reference")
+					fmt.Println(prevctg,"not fount in the reference file")
 				}
 			}
 			// new contig, new matrix
@@ -649,10 +654,12 @@ func main() {
 		for i:=9; i < len(cols); i++ {
 			row[i-9] = getGT(cols[i])
 		}
-		matrix = append(matrix, row)
-		poslist = append(poslist, pos)
-		nucs = append(nucs, cols[4])
-		refs = append(refs, cols[3])
+		if cols[4] != "*" {
+			matrix = append(matrix, row)
+			poslist = append(poslist, pos)
+			nucs = append(nucs, cols[4])
+			refs = append(refs, cols[3])
+		}
 
 		prevctg = ctg
 	}
