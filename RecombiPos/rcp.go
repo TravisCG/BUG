@@ -25,7 +25,8 @@ func printHelp() {
 	fmt.Println("-f             Father id in the VCF file")
 	fmt.Println("-w             Window size")
 	fmt.Println("-r             Reference sequence in fasta format")
-	fmt.Println("All other individual in the VCF file threated as offsprings")
+	fmt.Println("-s             Comma separated list of offsprings (sybling option)")
+	fmt.Println("All other individual in the VCF file threated as offsprings (except -s is specified)")
 }
 
 func openvcf(filename string) (*bufio.Scanner) {
@@ -495,7 +496,7 @@ func writeHAP(m [][]int, positions []int, firstclasses string, refs []string, nu
 			hap2.WriteString(nucs[i])
 			pos = pos + len(refs[i])
 		case 3:
-			fmt.Println("what the hack?", refs[i],nucs[i],contig,positions[i])
+			fmt.Println("Parent genotype is not recognizable", refs[i],nucs[i],contig,positions[i])
 		default:
 		}
 		hapstart = pos
@@ -534,6 +535,7 @@ func main() {
 	var motherid string = ""
 	var fatherid string = ""
 	var windowsize int = 16
+	var allowedSyblings []string
 
 	for i:= 0; i < len(os.Args); i++ {
 		if os.Args[i] == "-h" {
@@ -554,6 +556,9 @@ func main() {
 		}
 		if os.Args[i] == "-r" {
 			refname = os.Args[i+1]
+		}
+		if os.Args[i] == "-s" {
+			allowedSyblings = strings.Split(os.Args[i+1], ",")
 		}
 	}
 
@@ -595,7 +600,8 @@ func main() {
 	var nucs []string
 	var refs []string
 	var contiglen map[string]int = make(map[string]int)
-	var sibnames []string = make([]string, 0)
+	var samplenames []string = make([]string, 0)
+	var allowedindex []int = make([]int, 0)
 
 	re,rerr := regexp.Compile("##contig=<ID=([^,]+),length=([0-9]+)>")
 	if rerr != nil {
@@ -621,10 +627,24 @@ func main() {
 					fathercol = i
 				}
 				if i > 8 {
-					sibnames = append(sibnames, cols[i])
+					if len(allowedSyblings) > 0 {
+						if i == fathercol || i == mothercol {
+							allowedindex = append(allowedindex, i)
+							samplenames = append(samplenames, cols[i])
+						}
+						for _, sa := range(allowedSyblings){
+							if sa == cols[i] {
+								allowedindex = append(allowedindex, i)
+								samplenames = append(samplenames, sa)
+							}
+						}
+					} else {
+						samplenames = append(samplenames, cols[i])
+						allowedindex = append(allowedindex, i)
+					}
 				}
 			}
-			row = make([]int, len(cols) - 9)
+			row = make([]int, len(samplenames))
 			continue
 		}
 		ctg = cols[0]
@@ -638,7 +658,7 @@ func main() {
 				// The contig is not the first one
 				seq, exists := fasta[prevctg]
 				if exists {
-					processContig(matrix, poslist, windowsize, prevctg, contiglen[prevctg], mothercol - 9, fathercol - 9, sibnames, nucs, refs, seq)
+					processContig(matrix, poslist, windowsize, prevctg, contiglen[prevctg], mothercol - 9, fathercol - 9, samplenames, nucs, refs, seq)
 				} else {
 					fmt.Println(prevctg,"not fount in the reference file")
 				}
@@ -652,7 +672,11 @@ func main() {
 		// parse and store the offsprings genotype
 		row = make([]int, len(cols) - 9)
 		for i:=9; i < len(cols); i++ {
-			row[i-9] = getGT(cols[i])
+			for ii,index := range(allowedindex){
+				if index == i {
+					row[ii] = getGT(cols[i])
+				}
+			}
 		}
 		if cols[4] != "*" {
 			matrix = append(matrix, row)
@@ -663,5 +687,5 @@ func main() {
 
 		prevctg = ctg
 	}
-	processContig(matrix, poslist, windowsize, prevctg, contiglen[prevctg], mothercol - 9, fathercol - 9, sibnames, nucs, refs, fasta[prevctg])
+	processContig(matrix, poslist, windowsize, prevctg, contiglen[prevctg], mothercol - 9, fathercol - 9, samplenames, nucs, refs, fasta[prevctg])
 }
