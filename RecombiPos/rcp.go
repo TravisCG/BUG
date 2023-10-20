@@ -592,6 +592,8 @@ func main() {
 
 	var fathercol int
 	var mothercol int
+	var remappedf int
+	var remappedm int
 	var ctg string
 	var prevctg string = ""
 	var matrix [][]int // all windows per contig for every individual
@@ -631,6 +633,11 @@ func main() {
 						if i == fathercol || i == mothercol {
 							allowedindex = append(allowedindex, i)
 							samplenames = append(samplenames, cols[i])
+							if i == fathercol {
+								remappedf = len(samplenames) - 1
+							} else {
+								remappedm = len(samplenames) - 1
+							}
 						}
 						for _, sa := range(allowedSyblings){
 							if sa == cols[i] {
@@ -658,7 +665,7 @@ func main() {
 				// The contig is not the first one
 				seq, exists := fasta[prevctg]
 				if exists {
-					processContig(matrix, poslist, windowsize, prevctg, contiglen[prevctg], mothercol - 9, fathercol - 9, samplenames, nucs, refs, seq)
+					processContig(matrix, poslist, windowsize, prevctg, contiglen[prevctg], remappedm, remappedf, samplenames, nucs, refs, seq)
 				} else {
 					fmt.Println(prevctg,"not fount in the reference file")
 				}
@@ -687,5 +694,5 @@ func main() {
 
 		prevctg = ctg
 	}
-	processContig(matrix, poslist, windowsize, prevctg, contiglen[prevctg], mothercol - 9, fathercol - 9, samplenames, nucs, refs, fasta[prevctg])
+	processContig(matrix, poslist, windowsize, prevctg, contiglen[prevctg], remappedm, remappedf, samplenames, nucs, refs, fasta[prevctg])
 }
