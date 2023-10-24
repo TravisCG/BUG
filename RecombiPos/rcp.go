@@ -624,9 +624,11 @@ func main() {
 			for i:= 0; i < len(cols); i++ {
 				if cols[i] == motherid {
 					mothercol = i
+					remappedm = i - 9
 				}
 				if cols[i] == fatherid {
 					fathercol = i
+					remappedf = i - 9
 				}
 				if i > 8 {
 					if len(allowedSyblings) > 0 {
