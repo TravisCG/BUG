@@ -297,6 +297,7 @@ func processMatrix(m [][]int, positions []int, wsize int, hetcol int, homcol int
 			r := compareClasses(prevclasses, classes)
 			// recombination
 			if r != nil {
+fmt.Println(prevclasses, classes)
 				var actual Recombi
 				actual.position = getPosition(m, positions, i, wsize, prevclasses, classes, hetcol, homcol)
 				actual.siblings = r
@@ -679,7 +680,7 @@ func main() {
 			refs = make([]string, 0)
 		}
 		// parse and store the offsprings genotype
-		row = make([]int, len(cols) - 9)
+		row = make([]int, len(samplenames))
 		for i:=9; i < len(cols); i++ {
 			for ii,index := range(allowedindex){
 				if index == i {
