@@ -17,6 +17,14 @@ type Recombi struct {
 	siblings []int
 }
 
+/* Genotype information. The two haplotypes
+   does not have any order, because the VCF
+   also has no any */
+type Genotype struct {
+	h1 int
+	h2 int
+}
+
 func printHelp() {
 	fmt.Println("recombination position finder")
 	fmt.Println("-h             This help")
@@ -79,22 +87,74 @@ func refRead(filename string) (map[string]string) {
 	return fastastore
 }
 
-// Parse the genotype 0: hom ref, 1: het, 2: hom alt, 3: hard to find out what it is
-func getGT(fields string) (int) {
-	gt := strings.Split(fields, ":")[0]
+// Parse the genotype
+func getGT(fields string) (Genotype) {
+	var r Genotype
+	rex := regexp.MustCompile("[/|]")
+	gtfield := strings.Split(fields, ":")[0]
+	gt := rex.Split(gtfield,-1)
+
 	if len(gt) == 1 {
-		return 3
+		r.h1 = -1
+		r.h2 = -1
+	} else {
+		r.h1,_ = strconv.Atoi(gt[0])
+		r.h2,_ = strconv.Atoi(gt[1])
 	}
-	if gt[0] == '0' && gt[2] == '0' {
-		return 0
+
+	return r
+}
+
+// Genotype is homozygous
+func gtIsHom(gt Genotype) bool {
+	if gt.h1 == gt.h2 {
+		return true
 	}
-	if (gt[0] == '0' && gt[2] == '1') || (gt[0] == '1' && gt[2] == '0') {
-		return 1
+	return false
+}
+
+// The parents could have a child with this genotype?
+func isParentsChild(parent1 Genotype, parent2 Genotype, child Genotype) bool {
+	if( parent1.h1 == child.h1 && parent2.h2 == child.h2){
+		return true
 	}
-	if gt[0] == '1' && gt[2] == '1' {
-		return 2
+	if( parent1.h1 == child.h1 && parent2.h1 == child.h2){
+		return true
 	}
-	return 3
+	if( parent1.h2 == child.h1 && parent2.h1 == child.h2){
+		return true
+	}
+	if( parent1.h2 == child.h1 && parent2.h2 == child.h2){
+		return true
+	}
+	if( parent2.h1 == child.h1 && parent1.h1 == child.h2){
+		return true
+	}
+	if( parent2.h1 == child.h1 && parent1.h2 == child.h2){
+		return true
+	}
+	if( parent2.h2 == child.h2 && parent1.h1 == child.h2){
+		return true
+	}
+	if( parent2.h2 == child.h2 && parent1.h2 == child.h2){
+		return true
+	}
+	return false
+}
+
+// Both alleles are reference
+func gtIsRef(gt Genotype) bool {
+	if gt.h1 == 0 && gt.h2 == 0{
+		return true
+	}
+	return false
+}
+
+func gtIsHomAlt(gt Genotype) bool {
+	if gt.h1 > 0 && gt.h2 > 0 && gt.h1 == gt.h2 {
+		return true
+	}
+	return false
 }
 
 func compareClasses(prev string, actual string) []int {
@@ -120,17 +180,16 @@ func compareClasses(prev string, actual string) []int {
 	return nil
 }
 
-func clustering(m []int, hetcol int, homcol int) string {
+func clustering(m []Genotype, hetcol int, homcol int) string {
 	classes := strings.Builder{}
 	for j:=0; j < len(m); j++ {
 		if j == hetcol || j == homcol {
 			classes.WriteString("x")
 		} else {
-			clnum := m[j] - (m[homcol] / 2)
-			if clnum == -1 {
-				classes.WriteString("x")
+			if(gtIsHom(m[j])){
+				classes.WriteString("0")
 			} else {
-				classes.WriteString(strconv.Itoa(clnum))
+				classes.WriteString("1")
 			}
 		}
 	}
@@ -172,7 +231,7 @@ func normclasses(classes string, prev string) string {
 	return classes
 }
 
-func getPosition(m [][]int, positions []int, startpos int, wsize int, prevclasses string, classes string, hetcol int, homcol int) int {
+func getPosition(m [][]Genotype, positions []int, startpos int, wsize int, prevclasses string, classes string, hetcol int, homcol int) int {
 	var i int
 	for i=0; i < wsize; i++ {
 		actclass := clustering(m[startpos + i], hetcol, homcol)
@@ -184,19 +243,21 @@ func getPosition(m [][]int, positions []int, startpos int, wsize int, prevclasse
 	return positions[startpos + i]
 }
 
-// Create a filtered matrix
-func filtMatrix(m [][]int, positions []int, nucs []string, refs []string, hetcol int, homcol int, contig string) (fm [][]int, fp []int) {
-	fm = make([][]int, 0)
+/* Create a filtered matrix
+   We keep variations whose can be used for recombination detection
+*/
+func filtMatrix(m [][]Genotype, positions []int, nucs [][]string, hetcol int, homcol int, contig string) (fm [][]Genotype, fp []int) {
+	fm = make([][]Genotype, 0)
 	fp = make([]int, 0)
 
 	for i:=0; i < len(m); i++ {
-		if len(nucs[i]) > 1 || len(refs[i]) > 1 {
+		if len(nucs[i]) > 2 || len(nucs[i][1]) > 1 || len(nucs[i][0]) > 1{
 			continue
 		}
-		if m[i][hetcol] == 1 && m[i][homcol] == 0 {
+		if gtIsHom(m[i][hetcol]) == false && gtIsHom(m[i][homcol]) == true {
 			errorflag := false
 			for j:=0; j < len(m[i]); j++ {
-				if m[i][j] > 1 {
+				if isParentsChild(m[i][hetcol], m[i][homcol], m[i][j]) == false {
 					fmt.Println("Sequencing error:", contig, positions[i], j)
 					errorflag = true
 				}
@@ -205,22 +266,6 @@ func filtMatrix(m [][]int, positions []int, nucs []string, refs []string, hetcol
 				continue
 			}
 			fm = append(fm, m[i])
-			fp = append(fp, positions[i])
-		}
-		if m[i][hetcol] == 1 && m[i][homcol] == 2 {
-			errorflag := false
-			vari := make([]int, len(m[i]))
-			for j:=0; j < len(m[i]); j++ {
-				vari[j] = m[i][j] - 1
-				if m[i][j] == 0 {
-					fmt.Println("Sequencing error:", contig, positions[i], j)
-					errorflag = true
-				}
-			}
-			if errorflag {
-				continue
-			}
-			fm = append(fm, vari)
 			fp = append(fp, positions[i])
 		}
 	}
@@ -245,7 +290,7 @@ func ShannonEnt(classabu map[string]int) float64 {
 	return shannon
 }
 
-func getMaxClass(m [][]int, startpos int, wsize int, hetcol int, homcol int) (string, float64) {
+func getMaxClass(m [][]Genotype, startpos int, wsize int, hetcol int, homcol int) (string, float64) {
 	var classes string
 	classabu := make(map[string]int)
 	for j:=0; j < wsize; j++ {
@@ -268,7 +313,7 @@ func getMaxClass(m [][]int, startpos int, wsize int, hetcol int, homcol int) (st
 	return maxclass, ent
 }
 
-func processMatrix(m [][]int, positions []int, wsize int, hetcol int, homcol int, contig string) ([]Recombi, string){
+func processMatrix(m [][]Genotype, positions []int, wsize int, hetcol int, homcol int, contig string) ([]Recombi, string){
 	var ret []Recombi
 	var classes string
 	var prevclasses string
@@ -297,7 +342,6 @@ func processMatrix(m [][]int, positions []int, wsize int, hetcol int, homcol int
 			r := compareClasses(prevclasses, classes)
 			// recombination
 			if r != nil {
-fmt.Println(prevclasses, classes)
 				var actual Recombi
 				actual.position = getPosition(m, positions, i, wsize, prevclasses, classes, hetcol, homcol)
 				actual.siblings = r
@@ -363,9 +407,9 @@ func writeBED(rp []Recombi, firstclasses string, contig string, contiglen int, s
 	}
 }
 
-func hapDecision(flipflop []int, refs string, nucs string, genotype []int) (string, string) {
-	hap1 := make(map[int]int, 0)
-	hap2 := make(map[int]int, 0)
+func hapDecision(flipflop []int, nucs []string, genotype []Genotype, parentcol int) (string, string) {
+	hap1 := make(map[Genotype]int, 0)
+	hap2 := make(map[Genotype]int, 0)
 
 	// collect all the genotypes per groups
 	for i:=0; i < len(flipflop); i++ {
@@ -392,7 +436,7 @@ func hapDecision(flipflop []int, refs string, nucs string, genotype []int) (stri
 	// voting for the most abundant genotype in the group
 	// FIXME if two groups has the same abundance, we choose the first one, possible could cause error
 	max := 0
-	hmax1 := 0
+	var hmax1 Genotype //:= 0
 	for k,v:= range(hap1){
 		if v > max{
 			max = v
@@ -400,7 +444,7 @@ func hapDecision(flipflop []int, refs string, nucs string, genotype []int) (stri
 		}
 	}
 	max = 0
-	hmax2 := 0
+	var hmax2 Genotype //:= 0
 	for k,v := range(hap2){
 		if v > max {
 			max = v
@@ -412,38 +456,46 @@ func hapDecision(flipflop []int, refs string, nucs string, genotype []int) (stri
 	var hap1str string
 	var hap2str string
 
-	if hmax1 == 0 && hmax2 == 0 {
-		hap1str = refs
-		hap2str = refs
-	} else if hmax1 == 1 && hmax2 == 0 {
-		hap1str = nucs
-		hap2str = refs
-	} else if hmax1 == 2 && hmax2 == 0 {
-		hap1str = nucs
-		hap2str = refs
-	} else if hmax1 == 0 && hmax2 == 1 {
-		hap1str = refs
-		hap2str = nucs 
-	} else if hmax1 == 1 && hmax2 == 1 {
-		hap1str = refs
-		hap2str = nucs // there is no way to find out the correct haplotype
-	} else if hmax1 == 2 && hmax2 == 1 {
-		hap1str = nucs
-		hap2str = refs
-	} else if hmax1 == 0 && hmax2 == 2 {
-		hap1str = refs
-		hap2str = nucs
-	} else if hmax1 == 1 && hmax2 == 2 {
-		hap1str = refs
-		hap2str = nucs
-	} else if hmax1 == 2 && hmax2 == 2 {
-		hap1str = nucs
-		hap2str = nucs
+	if gtIsRef(hmax1) && gtIsRef(hmax2) {
+		hap1str = nucs[0]
+		hap2str = nucs[0]
+	} else if gtIsHom(hmax1) == false && gtIsRef(hmax2) {
+		if genotype[parentcol].h1 != 0 {
+			hap1str = nucs[genotype[parentcol].h1]
+		} else {
+			hap1str = nucs[genotype[parentcol].h2]
+		}
+		hap2str = nucs[0]
+	} else if gtIsHomAlt(hmax1) && gtIsRef(hmax2) {
+		hap1str = nucs[hmax1.h1]
+		hap2str = nucs[0]
+	} else if gtIsRef(hmax1) && gtIsHom(hmax2) == false {
+		hap1str = nucs[0]
+		if genotype[parentcol].h1 != 0 {
+			hap2str = nucs[genotype[parentcol].h1]
+		} else {
+			hap2str = nucs[genotype[parentcol].h2]
+		}
+	} else if gtIsHom(hmax1) == false && gtIsHom(hmax2) == false {
+		hap1str = nucs[0]
+		hap2str = nucs[hmax2.h1] //FIXME there is no way to find out the correct haplotype, right now it is just a dummy thing
+	} else if gtIsHomAlt(hmax1) && gtIsHom(hmax2) == false {
+		hap1str = nucs[hmax1.h1]
+		hap2str = nucs[0]
+	} else if gtIsRef(hmax1) && gtIsHomAlt(hmax2) {
+		hap1str = nucs[0]
+		hap2str = nucs[hmax2.h1]
+	} else if gtIsHom(hmax1) == false && gtIsHomAlt(hmax2) {
+		hap1str = nucs[0]
+		hap2str = nucs[hmax2.h1]
+	} else if gtIsHomAlt(hmax1) && gtIsHomAlt(hmax2) {
+		hap1str = nucs[hmax1.h1]
+		hap2str = nucs[hmax2.h1]
 	}
 	return hap1str, hap2str
 }
 
-func writeHAP(m [][]int, positions []int, firstclasses string, refs []string, nucs []string, recpos []Recombi, parentcol int, outfilename string, contig string, fastarecord string) {
+func writeHAP(m [][]Genotype, positions []int, firstclasses string, nucs [][]string, recpos []Recombi, parentcol int, outfilename string, contig string, fastarecord string) {
 	hap1 := strings.Builder{}
 	hap2 := strings.Builder{}
 	flipflop := make([]int, len(m[0]))
@@ -463,7 +515,6 @@ func writeHAP(m [][]int, positions []int, firstclasses string, refs []string, nu
 			flipflop[i] = 2
 		}
 	}
-
 	for i:=0; i < len(m); i++ {
 		pos := positions[i] - 1
 		// change the siblings groups if recombination occured
@@ -482,23 +533,16 @@ func writeHAP(m [][]int, positions []int, firstclasses string, refs []string, nu
 			continue
 		}
 		// decide which variation goes to which haplotype
-		switch m[i][parentcol] {
-		case 0:
-			// no variation, both haplotypes gets reference
-		case 1:
-			// heterozygous parent. The decision can be difficult
-			n1,n2 := hapDecision(flipflop, refs[i], nucs[i], m[i])
+		if gtIsHom(m[i][parentcol]) == false {
+			// heterozygous parent. THe decision can be difficult
+			n1, n2 := hapDecision(flipflop, nucs[i], m[i], parentcol)
 			hap1.WriteString(n1)
 			hap2.WriteString(n2)
-			pos = pos + len(refs[i])
-		case 2:
-			// homozygous alt sequence
-			hap1.WriteString(nucs[i])
-			hap2.WriteString(nucs[i])
-			pos = pos + len(refs[i])
-		case 3:
-			fmt.Println("Parent genotype is not recognizable", refs[i],nucs[i],contig,positions[i])
-		default:
+			pos = pos + len(nucs[i][0])
+		} else {
+			hap1.WriteString(nucs[i][ m[i][parentcol].h1 ])
+			hap2.WriteString(nucs[i][ m[i][parentcol].h2 ])
+			pos = pos + len(nucs[i][0])
 		}
 		hapstart = pos
 	}
@@ -513,21 +557,21 @@ func writeHAP(m [][]int, positions []int, firstclasses string, refs []string, nu
 	out.Close()
 }
 
-func processContig(m [][]int, positions []int, wsize int, contig string, contiglen int, mother int, father int, sibnames []string, nucs []string, refs []string, fastarecord string) {
+func processContig(m [][]Genotype, positions []int, wsize int, contig string, contiglen int, mother int, father int, sibnames []string, nucs [][]string, fastarecord string) {
 	var recpos []Recombi
 	var firstclasses string
-	var filtm [][]int
+	var filtm [][]Genotype
 	var filtp []int
 
-	filtm,filtp = filtMatrix(m, positions, nucs, refs, mother, father, contig)
+	filtm,filtp = filtMatrix(m, positions, nucs, mother, father, contig)
 	recpos,firstclasses = processMatrix(filtm, filtp, wsize, mother, father, contig)
 	writeBED(recpos, firstclasses, contig, contiglen, sibnames, mother, father)
-	writeHAP(m, positions, firstclasses, refs, nucs, recpos, mother, "motherhaplotype.fasta", contig, fastarecord)
+	writeHAP(m, positions, firstclasses, nucs, recpos, mother, "motherhaplotype.fasta", contig, fastarecord)
 
-	filtm,filtp = filtMatrix(m, positions, nucs, refs, father, mother, contig)
+	filtm,filtp = filtMatrix(m, positions, nucs, father, mother, contig)
 	recpos,firstclasses = processMatrix(filtm, filtp, wsize, father, mother, contig)
 	writeBED(recpos, firstclasses, contig, contiglen, sibnames, father, mother)
-	writeHAP(m, positions, firstclasses, refs, nucs, recpos, father, "fatherhaplotype.fasta", contig, fastarecord)
+	writeHAP(m, positions, firstclasses, nucs, recpos, father, "fatherhaplotype.fasta", contig, fastarecord)
 }
 
 func main() {
@@ -597,11 +641,10 @@ func main() {
 	var remappedm int
 	var ctg string
 	var prevctg string = ""
-	var matrix [][]int // all windows per contig for every individual
-	var row []int // sum of het genotypes in a window per every individual
+	var matrix [][]Genotype // all windows per contig for every individual
+	var row []Genotype // sum of het genotypes in a window per every individual
 	var poslist []int
-	var nucs []string
-	var refs []string
+	var nucs [][]string
 	var contiglen map[string]int = make(map[string]int)
 	var samplenames []string = make([]string, 0)
 	var allowedindex []int = make([]int, 0)
@@ -654,7 +697,7 @@ func main() {
 					}
 				}
 			}
-			row = make([]int, len(samplenames))
+			row = make([]Genotype, len(samplenames))
 			continue
 		}
 		ctg = cols[0]
@@ -668,19 +711,18 @@ func main() {
 				// The contig is not the first one
 				seq, exists := fasta[prevctg]
 				if exists {
-					processContig(matrix, poslist, windowsize, prevctg, contiglen[prevctg], remappedm, remappedf, samplenames, nucs, refs, seq)
+					processContig(matrix, poslist, windowsize, prevctg, contiglen[prevctg], remappedm, remappedf, samplenames, nucs, seq)
 				} else {
-					fmt.Println(prevctg,"not fount in the reference file")
+					fmt.Println(prevctg,"not found in the reference file")
 				}
 			}
 			// new contig, new matrix
-			matrix = make([][]int,0)
+			matrix = make([][]Genotype,0)
 			poslist = make([]int, 0)
-			nucs = make([]string, 0)
-			refs = make([]string, 0)
+			nucs = make([][]string, 0) // store alternative nucleotides
 		}
 		// parse and store the offsprings genotype
-		row = make([]int, len(samplenames))
+		row = make([]Genotype, len(samplenames))
 		for i:=9; i < len(cols); i++ {
 			for ii,index := range(allowedindex){
 				if index == i {
@@ -691,11 +733,13 @@ func main() {
 		if cols[4] != "*" {
 			matrix = append(matrix, row)
 			poslist = append(poslist, pos)
-			nucs = append(nucs, cols[4])
-			refs = append(refs, cols[3])
+			actnucs := make([]string, 0)
+			actnucs = append(actnucs, cols[3])
+			actnucs = append(actnucs, strings.Split(cols[4], ",")...)
+			nucs = append(nucs, actnucs)
 		}
 
 		prevctg = ctg
 	}
-	processContig(matrix, poslist, windowsize, prevctg, contiglen[prevctg], remappedm, remappedf, samplenames, nucs, refs, fasta[prevctg])
+	processContig(matrix, poslist, windowsize, prevctg, contiglen[prevctg], remappedm, remappedf, samplenames, nucs, fasta[prevctg])
 }
