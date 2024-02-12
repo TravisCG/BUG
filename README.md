@@ -47,6 +47,10 @@ Scaffolding using a GFF annotation
 
 Create simulated VCF file with two parents and siblings and simulate recombination events
 
+## SimHap
+
+Create mother and father haplotype references
+
 ## SimCirc
 
 Create simulated reads came from circular RNA sample
