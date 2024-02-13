@@ -7,6 +7,11 @@ import ("fmt"
 	"os"
 )
 
+type ChildHap struct {
+	mother int
+	father int
+}
+
 // How can we use the program
 func printHelp() {
 	fmt.Println("simhap: simulating haplotypes\n")
@@ -39,10 +44,9 @@ func saveHap(filename string, hap1 string, hap2 string){
 	f.Close()
 }
 
-func mutate(ref string, nuc [4]string) (string, string) {
+func mutate(ref string, nuc [4]string) ([2]string) {
 	alt := nuc[rand.Intn(4)]
-	var hap1 string
-	var hap2 string
+	var hap [2]string
 
 	// finding alternative nucleotide which is not reference
 	for ;alt == ref;{
@@ -52,17 +56,49 @@ func mutate(ref string, nuc [4]string) (string, string) {
 	// which haplotype affected?
 	switch rand.Intn(3) {
 	case 0:
-		hap1 = alt
-		hap2 = alt
+		hap[0] = alt
+		hap[1] = alt
 	case 1:
-		hap1 = ref
-		hap2 = alt
+		hap[0] = ref
+		hap[1] = alt
 	case 2:
-		hap1 = alt
-		hap2 = ref
+		hap[0] = alt
+		hap[1] = ref
 	}
 
-	return hap1, hap2
+	return hap
+}
+
+func vcfRecord(vcf *os.File, pos int64, ref string, mh [2]string, fh [2]string, childs []ChildHap) {
+	var alts map[string]int // all the alternative nucleotides
+	var index int = 1
+
+	//FIXME It is a bit ugly. Maybe an array would be nicer
+	alts = make(map[string]int)
+	if ref != mh[0] {
+		alts[mh[0]] = index
+		index++
+	}
+	if ref != mh[1] && mh[0] != mh[1] {
+		alts[mh[1]] = index
+		index++
+	}
+	_,ok := alts[fh[0]]
+	if ref != fh[0] && !ok {
+		alts[fh[0]] = index
+		index++
+	}
+	_,ok = alts[fh[1]]
+	if ref != fh[1] && !ok {
+		alts[fh[1]] = index
+		index++
+	}
+
+	for i:=0; i < len(childs); i++ {
+		_,ok = alts[childs]
+	}
+
+	vcf.WriteString("reference\t" + strconv.FormatInt(pos + 1, 10) + "\t" + ref + "\t")
 }
 
 func main() {
@@ -72,11 +108,12 @@ func main() {
 	var refoutput string = "reference.fasta"
 	nuc:= [4]string{"A","T","G","C"}
 	var reference strings.Builder
-	var motherhap1 strings.Builder
-	var motherhap2 strings.Builder
-	var fatherhap1 strings.Builder
-	var fatherhap2 strings.Builder
+	var motherhap [2]strings.Builder
+	var fatherhap [2]strings.Builder
 	var mutprob float64 = 0.001
+	var childnum int64 = 1
+	var childs []ChildHap
+	var vcfname string
 
 	// Argument handling
 	for i:=0; i < len(os.Args); i++ {
@@ -95,36 +132,57 @@ func main() {
 		if os.Args[i] == "-p" {
 			mutprob,_ = strconv.ParseFloat(os.Args[i+1], 64)
 		}
+		if os.Args[i] == "-c" {
+			childnum,_ = strconv.ParseInt(os.Args[i+1], 10, 64)
+		}
+		if os.Args[i] == "-vcf" {
+			vcfname = os.Args[i+1]
+		}
 	}
 
-	// building sequences
 	var i int64
+
+	// define childs
+	childs = make([]ChildHap, childnum)
+	for i=0; i < childnum; i++ {
+		childs[i].mother = rand.Intn(2)
+		childs[i].father = rand.Intn(2)
+	}
+
+	vcf,_ := os.OpenFile(vcfname, os.O_CREATE | os.O_WRONLY, 0660)
+
+	// building sequences
 	for i=0; i < seqlen; i++ {
+		var mh [2]string
+		var fh [2]string
 		ref := nuc[rand.Intn(4)] // this is the reference nucleotide
-		mh1 := ref //mother haplotype 1
-		mh2 := ref //mother haplotype 2
-		fh1 := ref //father haplotype 1
-		fh2 := ref //father haplotype 2
+		mh[0] = ref //mother haplotype 1
+		mh[1] = ref //mother haplotype 2
+		fh[0] = ref //father haplotype 1
+		fh[1] = ref //father haplotype 2
 
 		// Time for some mutation
 		if rand.Float64() < mutprob {
-			mh1, mh2 = mutate(ref, nuc)
+			mh = mutate(ref, nuc)
 		}
 		if rand.Float64() < mutprob {
-			fh1, fh2 = mutate(ref, nuc)
+			fh = mutate(ref, nuc)
 		}
 
+		// save VCF record
+		vcfRecord(vcf, i, ref, mh, fh, childs)
+
 		// store nucleotides
-		motherhap1.WriteString(mh1)
-		motherhap2.WriteString(mh2)
-		fatherhap1.WriteString(fh1)
-		fatherhap2.WriteString(fh2)
+		motherhap[0].WriteString(mh[0])
+		motherhap[1].WriteString(mh[1])
+		fatherhap[0].WriteString(fh[0])
+		fatherhap[1].WriteString(fh[1])
 		reference.WriteString(ref)
 	}
 
 	// write sequences to file
 	saveRef(refoutput, reference.String())
-	saveHap(motheroutput, motherhap1.String(), motherhap2.String())
-	saveHap(fatheroutput, fatherhap1.String(), fatherhap2.String())
-
+	saveHap(motheroutput, motherhap[0].String(), motherhap[1].String())
+	saveHap(fatheroutput, fatherhap[0].String(), fatherhap[1].String())
+	vcf.Close()
 }
