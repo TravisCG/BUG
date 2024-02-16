@@ -72,6 +72,10 @@ func mutate(ref string, nuc [4]string) ([2]string) {
 func vcfRecord(vcf *os.File, pos int64, ref string, mh [2]string, fh [2]string, childs []ChildHap) {
 	var alts map[string]int // all the alternative nucleotides
 	var index int = 1
+	var samples []string
+	var info string
+	var format string
+	var altstr string
 
 	//FIXME It is a bit ugly. Maybe an array would be nicer
 	alts = make(map[string]int)
@@ -95,10 +99,12 @@ func vcfRecord(vcf *os.File, pos int64, ref string, mh [2]string, fh [2]string, 
 	}
 
 	for i:=0; i < len(childs); i++ {
+		alts[mh[childs[i].mother]] fh[childs[i].father]
 		_,ok = alts[childs]
+		samples = append(samples, )
 	}
 
-	vcf.WriteString("reference\t" + strconv.FormatInt(pos + 1, 10) + "\t" + ref + "\t")
+	vcf.WriteString("reference\t" + strconv.FormatInt(pos + 1, 10) + "\t.\t" + ref + "\t" + altstr + "\t100\tPASS\t" + info + "\t" + format + "\t" + samples)
 }
 
 func main() {
