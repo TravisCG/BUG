@@ -69,13 +69,33 @@ func mutate(ref string, nuc [4]string) ([2]string) {
 	return hap
 }
 
-func vcfRecord(vcf *os.File, pos int64, ref string, mh [2]string, fh [2]string, childs []ChildHap) {
+func vcfHeader(vcf *os.File, chrlen int64, childnum int64) {
+	var i int64 = 0
+
+        vcf.WriteString("##fileformat=VCFv4.2\n")
+        vcf.WriteString("##contig=<ID=onechr,length=" + strconv.FormatInt(chrlen, 10) + ">\n")
+        vcf.WriteString("##INFO=<ID=RCM,Number=1,Type=Integer,Description=\"Recombination in this position, mother genome\">\n")
+        vcf.WriteString("##INFO=<ID=RCF,Number=1,Type=Integer,Description=\"Recombination in this position, father genome\">\n")
+        vcf.WriteString("##INFO=<ID=RMS,Number=1,Type=String,Description=\"Recombination in sample, mother genome\">\n")
+        vcf.WriteString("##INFO=<ID=RFS,Number=1,Type=String,Description=\"Recombination in sample, father genome\">\n")
+        vcf.WriteString("##INFO=<ID=FF,Number=1,Type=Integer,Description=\"False Flag. 0: no read error, 1: read error\">\n")
+        vcf.WriteString("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tmother\tfather")
+	for i=0; i < childnum; i++ {
+		vcf.WriteString("\tchild" + strconv.FormatInt(i, 10))
+	}
+	vcf.WriteString("\n")
+}
+
+func vcfRecord(vcf *os.File, pos int64, ref string, mh [2]string, fh [2]string, childs []ChildHap, rmut float64) {
 	var alts map[string]int // all the alternative nucleotides
-	var index int = 1
+	var index int = 1 // zero is reference
 	var samples []string
 	var info string
-	var format string
 	var altstr string
+	var mmutflag bool = false
+	var fmutflag bool = false
+	var rmsm string = ""
+	var rmsf string = ""
 
 	//FIXME It is a bit ugly. Maybe an array would be nicer
 	alts = make(map[string]int)
@@ -87,6 +107,9 @@ func vcfRecord(vcf *os.File, pos int64, ref string, mh [2]string, fh [2]string, 
 		alts[mh[1]] = index
 		index++
 	}
+	a := strconv.Itoa(alts[mh[0]])
+	b := strconv.Itoa(alts[mh[1]])
+	samples = append(samples, a + "/" + b)
 	_,ok := alts[fh[0]]
 	if ref != fh[0] && !ok {
 		alts[fh[0]] = index
@@ -97,14 +120,49 @@ func vcfRecord(vcf *os.File, pos int64, ref string, mh [2]string, fh [2]string, 
 		alts[fh[1]] = index
 		index++
 	}
+	a = strconv.Itoa(alts[fh[0]])
+	b = strconv.Itoa(alts[fh[1]])
+	samples = append(samples, a + "/" + b)
 
 	for i:=0; i < len(childs); i++ {
-		alts[mh[childs[i].mother]] fh[childs[i].father]
-		_,ok = alts[childs]
-		samples = append(samples, )
+		// recombination
+		if rand.Float64() < rmut {
+			mmutflag = true
+			rmsm = rmsm + ";RMS=child" + strconv.Itoa(i)
+			childs[i].mother = (childs[i].mother + 1) % 2
+		}
+		if rand.Float64() < rmut {
+			fmutflag = true
+			rmsf = rmsf + ";RFS=child" + strconv.Itoa(i)
+			childs[i].father = (childs[i].father + 1) % 2
+		}
+
+		a := strconv.Itoa(alts[mh[childs[i].mother]])
+		b := strconv.Itoa(alts[fh[childs[i].father]])
+		samples = append(samples, a + "/" + b)
 	}
 
-	vcf.WriteString("reference\t" + strconv.FormatInt(pos + 1, 10) + "\t.\t" + ref + "\t" + altstr + "\t100\tPASS\t" + info + "\t" + format + "\t" + samples)
+	if mmutflag {
+		info = "RCM=1" + rmsm
+	} else {
+		info = "RCM=0"
+	}
+	if fmutflag {
+		info = info + ";RCF=1" + rmsf
+	} else {
+		info = info + ";RCF=0"
+	}
+
+	if index == 1 && mmutflag == false && fmutflag == false {
+		return
+	}
+
+	vcf.WriteString("reference\t" + strconv.FormatInt(pos + 1, 10) + "\t.\t" + ref + "\t" + altstr + "\t100\tPASS\t" + info + "\tGT:FF")
+
+	for i:=0; i < len(samples); i++ {
+		vcf.WriteString("\t" + samples[i])
+	}
+	vcf.WriteString("\n")
 }
 
 func main() {
@@ -117,9 +175,10 @@ func main() {
 	var motherhap [2]strings.Builder
 	var fatherhap [2]strings.Builder
 	var mutprob float64 = 0.001
+	var recmutprob float64 = 0.001
 	var childnum int64 = 1
 	var childs []ChildHap
-	var vcfname string
+	var vcfname string = "out.vcf"
 
 	// Argument handling
 	for i:=0; i < len(os.Args); i++ {
@@ -156,6 +215,7 @@ func main() {
 	}
 
 	vcf,_ := os.OpenFile(vcfname, os.O_CREATE | os.O_WRONLY, 0660)
+	vcfHeader(vcf, seqlen, childnum)
 
 	// building sequences
 	for i=0; i < seqlen; i++ {
@@ -176,7 +236,7 @@ func main() {
 		}
 
 		// save VCF record
-		vcfRecord(vcf, i, ref, mh, fh, childs)
+		vcfRecord(vcf, i, ref, mh, fh, childs, recmutprob)
 
 		// store nucleotides
 		motherhap[0].WriteString(mh[0])
