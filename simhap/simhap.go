@@ -22,6 +22,7 @@ func printHelp() {
 	fmt.Println("-r: reference output name")
 	fmt.Println("-c: number of childs")
 	fmt.Println("-p: mutation probability (0.001)")
+	fmt.Println("-s: sequencing error probability (0.001)")
 }
 
 // This writes out one sequence
@@ -73,7 +74,7 @@ func vcfHeader(vcf *os.File, chrlen int64, childnum int64) {
 	var i int64 = 0
 
         vcf.WriteString("##fileformat=VCFv4.2\n")
-        vcf.WriteString("##contig=<ID=onechr,length=" + strconv.FormatInt(chrlen, 10) + ">\n")
+        vcf.WriteString("##contig=<ID=reference,length=" + strconv.FormatInt(chrlen, 10) + ">\n")
         vcf.WriteString("##INFO=<ID=RCM,Number=1,Type=Integer,Description=\"Recombination in this position, mother genome\">\n")
         vcf.WriteString("##INFO=<ID=RCF,Number=1,Type=Integer,Description=\"Recombination in this position, father genome\">\n")
         vcf.WriteString("##INFO=<ID=RMS,Number=1,Type=String,Description=\"Recombination in sample, mother genome\">\n")
@@ -86,8 +87,9 @@ func vcfHeader(vcf *os.File, chrlen int64, childnum int64) {
 	vcf.WriteString("\n")
 }
 
-func vcfRecord(vcf *os.File, pos int64, ref string, mh [2]string, fh [2]string, childs []ChildHap, rmut float64) {
+func vcfRecord(vcf *os.File, pos int64, ref string, mh [2]string, fh [2]string, childs []ChildHap, rmut float64, seprob float64) {
 	var alts map[string]int // all the alternative nucleotides
+	var alts2 []string      // all alternative nucleotides
 	var index int = 1 // zero is reference
 	var samples []string
 	var info string
@@ -96,35 +98,43 @@ func vcfRecord(vcf *os.File, pos int64, ref string, mh [2]string, fh [2]string, 
 	var fmutflag bool = false
 	var rmsm string = ""
 	var rmsf string = ""
+	nuc:= [4]string{"A","T","G","C"}
 
 	//FIXME It is a bit ugly. Maybe an array would be nicer
 	alts = make(map[string]int)
+	alts[ref] = 0
+	alts2 = append(alts2, ref)
 	if ref != mh[0] {
 		alts[mh[0]] = index
+		alts2 = append(alts2, mh[0])
 		index++
 	}
 	if ref != mh[1] && mh[0] != mh[1] {
 		alts[mh[1]] = index
+		alts2 = append(alts2, mh[1])
 		index++
 	}
 	a := strconv.Itoa(alts[mh[0]])
 	b := strconv.Itoa(alts[mh[1]])
-	samples = append(samples, a + "/" + b)
+	samples = append(samples, a + "/" + b + ":0") //TODO there is no sequencing error in parents
 	_,ok := alts[fh[0]]
 	if ref != fh[0] && !ok {
 		alts[fh[0]] = index
+		alts2 = append(alts2, fh[0])
 		index++
 	}
 	_,ok = alts[fh[1]]
 	if ref != fh[1] && !ok {
 		alts[fh[1]] = index
+		alts2 = append(alts2, fh[1])
 		index++
 	}
 	a = strconv.Itoa(alts[fh[0]])
 	b = strconv.Itoa(alts[fh[1]])
-	samples = append(samples, a + "/" + b)
+	samples = append(samples, a + "/" + b + ":0") //TODO there is no sequencing error in parents
 
 	for i:=0; i < len(childs); i++ {
+		falseflag := ":0"
 		// recombination
 		if rand.Float64() < rmut {
 			mmutflag = true
@@ -139,7 +149,25 @@ func vcfRecord(vcf *os.File, pos int64, ref string, mh [2]string, fh [2]string, 
 
 		a := strconv.Itoa(alts[mh[childs[i].mother]])
 		b := strconv.Itoa(alts[fh[childs[i].father]])
-		samples = append(samples, a + "/" + b)
+
+		// sequencing error
+		if rand.Float64() < seprob {
+			falseflag = ":1"
+			nuc1 := nuc[rand.Intn(4)]
+			nuc2 := ref
+			for nuc1 == ref {
+				nuc1 = nuc[rand.Intn(4)]
+			}
+			alts[nuc1] = index
+			alts2 = append(alts2, nuc1)
+			index++
+			if rand.Float64() < 0.5 {
+				nuc2 = nuc1
+			}
+			a = strconv.Itoa(alts[nuc1])
+			b = strconv.Itoa(alts[nuc2])
+		}
+		samples = append(samples, a + "/" + b + falseflag)
 	}
 
 	if mmutflag {
@@ -157,6 +185,7 @@ func vcfRecord(vcf *os.File, pos int64, ref string, mh [2]string, fh [2]string, 
 		return
 	}
 
+	altstr = strings.Join(alts2[1:], ",")
 	vcf.WriteString("reference\t" + strconv.FormatInt(pos + 1, 10) + "\t.\t" + ref + "\t" + altstr + "\t100\tPASS\t" + info + "\tGT:FF")
 
 	for i:=0; i < len(samples); i++ {
@@ -176,6 +205,7 @@ func main() {
 	var fatherhap [2]strings.Builder
 	var mutprob float64 = 0.001
 	var recmutprob float64 = 0.001
+	var seprob float64 = 0.001 // Sequencing error probability
 	var childnum int64 = 1
 	var childs []ChildHap
 	var vcfname string = "out.vcf"
@@ -202,6 +232,13 @@ func main() {
 		}
 		if os.Args[i] == "-vcf" {
 			vcfname = os.Args[i+1]
+		}
+		if os.Args[i] == "-s" {
+			seprob,_ = strconv.ParseFloat(os.Args[i+1], 64)
+		}
+		if os.Args[i] == "-h" {
+			printHelp()
+			return
 		}
 	}
 
@@ -236,7 +273,7 @@ func main() {
 		}
 
 		// save VCF record
-		vcfRecord(vcf, i, ref, mh, fh, childs, recmutprob)
+		vcfRecord(vcf, i, ref, mh, fh, childs, recmutprob, seprob)
 
 		// store nucleotides
 		motherhap[0].WriteString(mh[0])
