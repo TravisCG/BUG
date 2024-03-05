@@ -195,7 +195,7 @@ func vcfRecord(vcf *os.File, pos int64, ref string, mh [2]string, fh [2]string, 
 }
 
 func main() {
-	var seqlen int64 = 2000
+	var seqlen int64 = 2000000
 	var motheroutput string = "mother.out.fasta"
 	var fatheroutput string = "father.out.fasta"
 	var refoutput string = "reference.fasta"
@@ -204,7 +204,7 @@ func main() {
 	var motherhap [2]strings.Builder
 	var fatherhap [2]strings.Builder
 	var mutprob float64 = 0.001
-	var recmutprob float64 = 0.001
+	var recmutprob float64 = 0.0001
 	var seprob float64 = 0.001 // Sequencing error probability
 	var childnum int64 = 1
 	var childs []ChildHap
