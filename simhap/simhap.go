@@ -23,6 +23,7 @@ func printHelp() {
 	fmt.Println("-c: number of childs")
 	fmt.Println("-p: mutation probability (0.001)")
 	fmt.Println("-s: sequencing error probability (0.001)")
+	fmt.Println("-e: rEcombination probability (0.00001)")
 }
 
 // This writes out one sequence
@@ -204,7 +205,7 @@ func main() {
 	var motherhap [2]strings.Builder
 	var fatherhap [2]strings.Builder
 	var mutprob float64 = 0.001
-	var recmutprob float64 = 0.0001
+	var recmutprob float64 = 0.00001
 	var seprob float64 = 0.001 // Sequencing error probability
 	var childnum int64 = 1
 	var childs []ChildHap
@@ -239,6 +240,9 @@ func main() {
 		if os.Args[i] == "-h" {
 			printHelp()
 			return
+		}
+		if os.Args[i] == "-e" {
+			recmutprob,_ = strconv.ParseFloat(os.Args[i+1], 64)
 		}
 	}
 
