@@ -113,7 +113,7 @@ func gtIsHom(gt Genotype) bool {
 	return false
 }
 
-// The parents could have a child with this genotype?
+// The parents could have a child with the given genotype?
 func isParentsChild(parent1 Genotype, parent2 Genotype, child Genotype) bool {
 	if( parent1.h1 == child.h1 && parent2.h2 == child.h2){
 		return true
@@ -150,6 +150,7 @@ func gtIsRef(gt Genotype) bool {
 	return false
 }
 
+// Genotype is homozygous and not contains reference allele
 func gtIsHomAlt(gt Genotype) bool {
 	if gt.h1 > 0 && gt.h2 > 0 && gt.h1 == gt.h2 {
 		return true
@@ -269,10 +270,10 @@ func filtMatrix(m [][]Genotype, positions []int, nucs [][]string, hetcol int, ho
 			fp = append(fp, positions[i])
 		}
 	}
-
 	return fm, fp
 }
 
+// Calculate Shannon entropy
 func ShannonEnt(classabu map[string]int) float64 {
 	var sum int = 0
 	var shannon float64 = 0.0
@@ -414,7 +415,7 @@ func hapDecision(flipflop []int, nucs []string, genotype []Genotype, parentcol i
 	// collect all the genotypes per groups
 	for i:=0; i < len(flipflop); i++ {
 		if flipflop[i] == 2 {
-			// Parent column maybe. I will use this information, but right now not
+			// Parent column maybe. I will use this information, but not right now
 		} else {
 			if flipflop[i] == 0 {
 				// first haplotype
@@ -433,22 +434,30 @@ func hapDecision(flipflop []int, nucs []string, genotype []Genotype, parentcol i
 			}
 		}
 	}
+
 	// voting for the most abundant genotype in the group
-	// FIXME if two groups has the same abundance, we choose the first one, possible could cause error
 	max := 0
 	var hmax1 Genotype //:= 0
+	hetnum1 := 0
 	for k,v:= range(hap1){
 		if v > max{
 			max = v
 			hmax1 = k
 		}
+		if gtIsHom(k) == false {
+			hetnum1 += 1
+		}
 	}
 	max = 0
 	var hmax2 Genotype //:= 0
+	hetnum2 := 0
 	for k,v := range(hap2){
 		if v > max {
 			max = v
 			hmax2 = k
+		}
+		if gtIsHom(k) == false {
+			hetnum2 += 1
 		}
 	}
 
@@ -457,8 +466,13 @@ func hapDecision(flipflop []int, nucs []string, genotype []Genotype, parentcol i
 	var hap2str string
 
 	if gtIsRef(hmax1) && gtIsRef(hmax2) {
-		hap1str = nucs[0]
-		hap2str = nucs[0]
+		if hetnum1 > hetnum2 {
+			hap1str = nucs[genotype[parentcol].h1]
+			hap2str = nucs[0]
+		} else {
+			hap1str = nucs[0]
+			hap2str = nucs[genotype[parentcol].h2]
+		}
 	} else if gtIsHom(hmax1) == false && gtIsRef(hmax2) {
 		if genotype[parentcol].h1 != 0 {
 			hap1str = nucs[genotype[parentcol].h1]
