@@ -247,7 +247,7 @@ func getPosition(m [][]Genotype, positions []int, startpos int, wsize int, prevc
 /* Create a filtered matrix
    We keep variations whose can be used for recombination detection
 */
-func filtMatrix(m [][]Genotype, positions []int, nucs [][]string, hetcol int, homcol int, contig string) (fm [][]Genotype, fp []int) {
+func filtMatrix(m [][]Genotype, positions []int, nucs [][]string, hetcol int, homcol int, contig string, wsize int) (fm [][]Genotype, fp []int) {
 	fm = make([][]Genotype, 0)
 	fp = make([]int, 0)
 
@@ -268,6 +268,9 @@ func filtMatrix(m [][]Genotype, positions []int, nucs [][]string, hetcol int, ho
 			}
 			fm = append(fm, m[i])
 			fp = append(fp, positions[i])
+			if fp[len(fp)] - fp[len(fp) - 1] > wsize {
+				fmt.Println("No enough variation in the given window:", contig, fp[len(fp)], fp[len(fp)-1])
+			}
 		}
 	}
 	return fm, fp
@@ -577,12 +580,12 @@ func processContig(m [][]Genotype, positions []int, wsize int, contig string, co
 	var filtm [][]Genotype
 	var filtp []int
 
-	filtm,filtp = filtMatrix(m, positions, nucs, mother, father, contig)
+	filtm,filtp = filtMatrix(m, positions, nucs, mother, father, contig, wsize)
 	recpos,firstclasses = processMatrix(filtm, filtp, wsize, mother, father, contig)
 	writeBED(recpos, firstclasses, contig, contiglen, sibnames, mother, father)
 	writeHAP(m, positions, firstclasses, nucs, recpos, mother, "motherhaplotype.fasta", contig, fastarecord)
 
-	filtm,filtp = filtMatrix(m, positions, nucs, father, mother, contig)
+	filtm,filtp = filtMatrix(m, positions, nucs, father, mother, contig, wsize)
 	recpos,firstclasses = processMatrix(filtm, filtp, wsize, father, mother, contig)
 	writeBED(recpos, firstclasses, contig, contiglen, sibnames, father, mother)
 	writeHAP(m, positions, firstclasses, nucs, recpos, father, "fatherhaplotype.fasta", contig, fastarecord)
