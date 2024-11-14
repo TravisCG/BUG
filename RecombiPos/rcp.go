@@ -268,8 +268,8 @@ func filtMatrix(m [][]Genotype, positions []int, nucs [][]string, hetcol int, ho
 			}
 			fm = append(fm, m[i])
 			fp = append(fp, positions[i])
-			if fp[len(fp)] - fp[len(fp) - 1] > wsize {
-				fmt.Println("No enough variation in the given window:", contig, fp[len(fp)], fp[len(fp)-1])
+			if len(fp) > 1 && fp[len(fp) - 1] - fp[len(fp) - 2] > wsize {
+				fmt.Println("No enough variation in the given window:", contig, fp[len(fp)-1], fp[len(fp)-2])
 			}
 		}
 	}
