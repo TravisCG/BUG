@@ -35,6 +35,10 @@ Simple HMM framework. Right now it is just a test framework
 
 Filter fastq file by read id
 
+## FastqChk
+
+Check if there is a formatting problem in the fastq file
+
 ## RingRing
 
 Circular RNA finding tool
