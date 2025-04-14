@@ -34,6 +34,7 @@ func printHelp() {
 	fmt.Println("-w             Window size")
 	fmt.Println("-r             Reference sequence in fasta format")
 	fmt.Println("-s             Comma separated list of offsprings (sybling option)")
+	fmt.Println("-v             Print version information")
 	fmt.Println("All other individual in the VCF file threated as offsprings (except -s is specified)")
 }
 
@@ -596,7 +597,7 @@ func main() {
 	var refname string = ""
 	var motherid string = ""
 	var fatherid string = ""
-	var windowsize int = 16
+	var windowsize int = 200
 	var allowedSyblings []string
 
 	for i:= 0; i < len(os.Args); i++ {
@@ -621,6 +622,10 @@ func main() {
 		}
 		if os.Args[i] == "-s" {
 			allowedSyblings = strings.Split(os.Args[i+1], ",")
+		}
+		if os.Args[i] == "-v" {
+			fmt.Println("version: 1.02")
+			return
 		}
 	}
 
