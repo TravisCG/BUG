@@ -17,6 +17,7 @@ func printHelp() {
 	fmt.Println("-m: recombination mutation rate (default: 0.0001)")
 	fmt.Println("-e: sequencing error rate (default: 0.001)")
 	fmt.Println("-l: chromosome length (default: 2000000)")
+	fmt.Println("-n: number of childs (default: 8)")
 	fmt.Println("VCF will be seen in stdout")
 }
 
@@ -106,6 +107,9 @@ func main() {
 		}
 		if os.Args[i] == "-l" {
 			chrlen,_ = strconv.Atoi(os.Args[i+1])
+		}
+		if os.Args[i] == "-n" {
+			numchild,_ = strconv.Atoi(os.Args[i+1])
 		}
 	}
 
