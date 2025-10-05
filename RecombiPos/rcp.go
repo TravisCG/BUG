@@ -269,7 +269,7 @@ func filtMatrix(m [][]Genotype, positions []int, nucs [][]string, hetcol int, ho
 			}
 			fm = append(fm, m[i])
 			fp = append(fp, positions[i])
-			if len(fp) > 1 && fp[len(fp) - 1] - fp[len(fp) - 2] > wsize {
+			if len(fp) > 1 && fp[len(fp) - 1] - fp[len(fp) - 2] > wsize { //FIXME We do not deal with fixed length window! Window size is based on the number of variations, not number of nucleotides!
 				fmt.Println("No enough variation in the given window:", contig, fp[len(fp)-1], fp[len(fp)-2])
 			}
 		}
